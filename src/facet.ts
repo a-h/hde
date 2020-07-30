@@ -71,7 +71,7 @@ export class Facet<T> {
         } as GetOutput<T>)
       : null;
   };
-  records = async (id: string): Promise<RecordsOutput> => {
+  private records = async (id: string): Promise<RecordsOutput> => {
     const records = await getRecords(this.client, this.name, this.table, id);
     const result = {
       data: new Array<DataRecord>(),
@@ -92,7 +92,7 @@ export class Facet<T> {
     });
     return result;
   };
-  update = async (
+  put = async (
     id: string,
     newData: Array<TypeNameToData<any>>,
     headUpdater: TypeNameToHeadUpdater<T>
@@ -104,8 +104,14 @@ export class Facet<T> {
       if (a._seq < b._seq) {
         return -1;
       }
-      if (a._seq == b._seq) {
-        return 0;
+      if (a._seq === b._seq) {
+        if (a._ts < b._ts) {
+          return -1;
+        }
+        if (a._ts === b._ts) {
+          return 0;
+        }
+        return 1;
       }
       return 1;
     });

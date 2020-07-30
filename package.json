@@ -15,10 +15,10 @@
   "author": "a-h",
   "license": "ISC",
   "dependencies": {
-    "aws-sdk": "^2.723.0",
-    "typescript": "^3.9.7"
+    "aws-sdk": "^2.723.0"
   },
   "devDependencies": {
-    "ts-node": "^8.10.2"
+    "ts-node": "^8.10.2",
+    "typescript": "^3.9.7"
   }
 }
