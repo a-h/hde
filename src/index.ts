@@ -25,10 +25,6 @@ export interface RecordsOutput {
   events: Array<EventRecord>;
 }
 
-// dataSinceHead returns all data from the data records that has happened since the current head record.
-export const dataSinceHead = (head: HeadRecord, data: Array<DataRecord>) =>
-  data.filter((d) => d._seq > head._seq);
-
 export interface HeadUpdaterInput<THead, TCurrent> {
   head: THead;
   headSeq: number;
@@ -129,7 +125,7 @@ export class Facet<T> {
     });
     let head = records.head?._itm ? JSON.parse(records.head._itm) as T : this.emptyFacet();
     const seq = records.head ? records.head._seq + 1 : 1;
-    const newRecords = newData.map((typeNameToData) =>
+    const newDataRecords = newData.map((typeNameToData) =>
       newDataRecord(
         this.name,
         id,
@@ -139,7 +135,7 @@ export class Facet<T> {
       )
     );
     const rules = this.rules;
-    [...data, ...newRecords].forEach((curr, idx) => {
+    [...data, ...newDataRecords].forEach((curr, idx) => {
       const updater = rules.get(curr._typ);
       if (updater) {
         head = updater({
@@ -158,7 +154,7 @@ export class Facet<T> {
       this.table,
       this.name,
       newHeadRecord(this.name, id, seq, head),
-      newRecords
+      newDataRecords
     );
   }
 }

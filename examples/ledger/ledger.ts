@@ -120,6 +120,15 @@ const demonstrateLedger = async () => {
     })
   );
 
+  // Another separate transaction.
+  await ledger.put(
+    accountId,
+    new Data<Transaction>(TransactionRecordName, {
+      desc: "Transaction C",
+      amount: 50,
+    }),
+  );
+
   // Get the final balance.
   const finalBalance = await ledger.get(accountId);
   if (finalBalance != null && finalBalance.item != null) {
