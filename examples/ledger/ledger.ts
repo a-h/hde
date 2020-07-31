@@ -1,10 +1,5 @@
 import * as AWS from "aws-sdk";
-import {
-  Facet,
-  HeadUpdaterInput,
-  Data,
-  HeadUpdater,
-} from "../../src";
+import { Facet, HeadUpdaterInput, Data, HeadUpdater } from "../../src";
 
 // The account Facet has multiple records.
 // Head: The current "AccountBalance".
@@ -63,7 +58,10 @@ const demonstrateLedger = async () => {
   rules.set(
     TransactionRecordName,
     (input: HeadUpdaterInput<AccountBalance, Transaction>): AccountBalance => {
-      input.head.balance += input.current.amount;
+      // Only change the balance on new records.
+      if (input.currentSeq > input.headSeq) {
+        input.head.balance += input.current.amount;
+      }
       return input.head;
     }
   );
@@ -79,9 +77,10 @@ const demonstrateLedger = async () => {
   );
 
   // New accounts start with a balance of zero.
-  const emptyAccount = (): AccountBalance => ({
-    balance: 0,
-  } as AccountBalance);
+  const emptyAccount = (): AccountBalance =>
+    ({
+      balance: 0,
+    } as AccountBalance);
 
   // Can now create a ledger "Facet" in our DynamoDB table.
   const ledger = new Facet<AccountBalance>(
@@ -89,7 +88,7 @@ const demonstrateLedger = async () => {
     tableName,
     AccountBalanceRecordName,
     rules,
-    emptyAccount,
+    emptyAccount
   );
 
   // Let's create a new account.
@@ -126,7 +125,7 @@ const demonstrateLedger = async () => {
     new Data<Transaction>(TransactionRecordName, {
       desc: "Transaction C",
       amount: 50,
-    }),
+    })
   );
 
   // Get the final balance.

@@ -1,16 +1,14 @@
 import {
   Record,
-  getHead,
-  getRecords,
   HeadRecord,
   DataRecord,
   EventRecord,
   isDataRecord,
   isEventRecord,
   isHeadRecord,
-  putHead,
   newDataRecord,
   newHeadRecord,
+  EventDB,
 } from "./records";
 import { DocumentClient } from "aws-sdk/clients/dynamodb";
 
@@ -32,7 +30,7 @@ export interface HeadUpdaterInput<THead, TCurrent> {
   currentSeq: number;
   all: Array<DataRecord>;
   index: number;
-};
+}
 
 // HeadUpdater<THead, TCurrent> defines a function used to update head based on the current type.
 export type HeadUpdater<THead, TCurrent> = (
@@ -52,27 +50,35 @@ export type RecordName = string;
 export type RecordType = any;
 export type EmptyFacet<T> = () => T;
 
+interface DB {
+  getHead(id: string): Promise<Record>;
+  getRecords(id: string): Promise<Array<Record>>;
+  putHead(
+    head: HeadRecord,
+    data: Array<DataRecord>,
+    events: Array<EventRecord>
+  ): Promise<void>;
+}
+
 export class Facet<T> {
-  client: DocumentClient;
-  table: string;
   name: string;
   rules: Map<RecordName, HeadUpdater<T, RecordType>>;
   emptyFacet: EmptyFacet<T>;
+  db: DB;
   constructor(
     client: DocumentClient,
     table: string,
     name: string,
     rules: Map<RecordName, HeadUpdater<T, RecordType>>,
-    emptyFacet: EmptyFacet<T> = () => ({} as T),
+    emptyFacet: EmptyFacet<T> = () => ({} as T)
   ) {
-    this.client = client;
-    this.table = table;
     this.name = name;
     this.rules = rules;
     this.emptyFacet = emptyFacet;
+    this.db = new EventDB(client, table, name);
   }
   async get(id: string): Promise<GetOutput<T> | null> {
-    const head = await getHead(this.client, this.table, this.name, id);
+    const head = await this.db.getHead(id);
     return head
       ? ({
           record: head,
@@ -81,7 +87,7 @@ export class Facet<T> {
       : null;
   }
   private async records(id: string): Promise<RecordsOutput> {
-    const records = await getRecords(this.client, this.name, this.table, id);
+    const records = await this.db.getRecords(id);
     const result = {
       data: new Array<DataRecord>(),
       events: new Array<EventRecord>(),
@@ -101,10 +107,7 @@ export class Facet<T> {
     });
     return result;
   }
-  async put(
-    id: string,
-    ...newData: Array<Data<any>>
-  ) {
+  async put(id: string, ...newData: Array<Data<any>>) {
     // Get the records.
     const records = await this.records(id);
     // Apply the updates to the head.
@@ -123,7 +126,9 @@ export class Facet<T> {
       }
       return 1;
     });
-    let head = records.head?._itm ? JSON.parse(records.head._itm) as T : this.emptyFacet();
+    let head = records.head?._itm
+      ? (JSON.parse(records.head._itm) as T)
+      : this.emptyFacet();
     const seq = records.head ? records.head._seq + 1 : 1;
     const newDataRecords = newData.map((typeNameToData) =>
       newDataRecord(
@@ -149,12 +154,10 @@ export class Facet<T> {
       }
     });
     // Write the head transaction back.
-    await putHead(
-      this.client,
-      this.table,
-      this.name,
+    await this.db.putHead(
       newHeadRecord(this.name, id, seq, head),
-      newDataRecords
+      newDataRecords,
+      []
     );
   }
 }
