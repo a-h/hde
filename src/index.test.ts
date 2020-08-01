@@ -79,14 +79,14 @@ describe("facet", () => {
       expect(getOutput).toEqual(expected);
     });
   });
-  describe("put", () => {
+  describe("recalculate", () => {
     it("creates an empty head record on first put if it doesn't exist", async () => {
       const db = new MockDB();
       const emptyRules = new Map<RecordName, HeadUpdater<any, RecordType>>();
       const facet = new Facet<TestHead>(db, "name", emptyRules);
       const data: TestData = { data1: "1", data2: "2" };
 
-      const putOutput = await facet.put(
+      const putOutput = await facet.recalculate(
         "id",
         new Data<TestData>("TestData", data)
       );
@@ -103,7 +103,7 @@ describe("facet", () => {
       const facet = new Facet<TestHead>(db, "name", emptyRules, () => initial);
       const data: TestData = { data1: "1", data2: "2" };
 
-      const putOutput = await facet.put(
+      const putOutput = await facet.recalculate(
         "id",
         new Data<TestData>("TestData", data)
       );
@@ -136,7 +136,7 @@ describe("facet", () => {
       const data1: TestData = { data1: "1", data2: "" };
       const data2: TestData = { data1: "2", data2: "" };
 
-      const putOutput = await facet.put(
+      const putOutput = await facet.recalculate(
         "id",
         new Data<TestData>("TestData", data1),
         new Data<TestData>("TestData", data2)
@@ -184,7 +184,7 @@ describe("facet", () => {
         );
 
       const expected: TestHead = { a: "0_1_2_3", b: "empty" };
-      const putOutput = await facet.put(
+      const putOutput = await facet.recalculate(
         "id",
         new Data<TestData>("TestData", data3)
       );

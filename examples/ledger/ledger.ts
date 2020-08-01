@@ -99,10 +99,10 @@ const demonstrateLedger = async () => {
   const accountId = Math.round(Math.random() * 1000000).toString();
 
   // There is no new data to add.
-  await ledger.put(accountId);
+  await ledger.append(accountId);
 
   // Update the name of the owner.
-  await ledger.put(
+  await ledger.append(
     accountId,
     new Data<AccountUpdate>(AccountUpdateRecordName, {
       ownerFirst: "John",
@@ -111,7 +111,7 @@ const demonstrateLedger = async () => {
   );
 
   // Now, let's add a couple of transactions in a single operation.
-  await ledger.put(
+  await ledger.append(
     accountId,
     new Data<Transaction>(TransactionRecordName, {
       desc: "Transaction A",
@@ -124,7 +124,7 @@ const demonstrateLedger = async () => {
   );
 
   // Another separate transaction.
-  await ledger.put(
+  const transactionCResult = await ledger.append(
     accountId,
     new Data<Transaction>(TransactionRecordName, {
       desc: "Transaction C",
@@ -132,11 +132,36 @@ const demonstrateLedger = async () => {
     })
   );
 
+  // If we've just read the HEAD, we can try appending without doing
+  // another database read. If no other records have been written in the
+  // meantime, the transaction will succeed.
+  await ledger.appendTo(
+    accountId,
+    transactionCResult.head,
+    transactionCResult.seq,
+    new Data<Transaction>(TransactionRecordName, {
+      desc: "Transaction D",
+      amount: 25,
+    })
+  );
+
   // Get the final balance.
-  const finalBalance = await ledger.get(accountId);
-  if (finalBalance != null && finalBalance.item != null) {
-    console.log(`Account details: ${JSON.stringify(finalBalance.item)}`);
-  }
+  const balance = await ledger.get(accountId);
+  console.log(`Account details: ${JSON.stringify(balance?.item)}`);
+
+  // Verify the final balance by reading all of the transactions and re-calculating.
+  const verifiedBalance = await ledger.recalculate(accountId);
+  console.log(`Verified balance: ${JSON.stringify(verifiedBalance.head)}`);
+
+  // The re-calculation can also take data to modify the result.
+  const finalBalance = await ledger.recalculate(
+    accountId,
+    new Data<Transaction>(TransactionRecordName, {
+      desc: "Transaction E",
+      amount: 25,
+    })
+  );
+  console.log(`Final balance: ${JSON.stringify(finalBalance.head)}`);
 };
 
 demonstrateLedger()

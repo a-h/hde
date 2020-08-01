@@ -10,6 +10,7 @@ import {
   newHeadRecord,
   newEventRecord,
 } from "./records";
+import {Put} from "aws-sdk/clients/dynamodb";
 
 export interface GetOutput<T> {
   record: Record;
@@ -22,7 +23,7 @@ interface RecordsOutput {
   events: Array<EventRecord>;
 }
 
-export interface PutOutput<T> {
+export interface ChangeOutput<T> {
   id: string;
   seq: number;
   head: T;
@@ -30,14 +31,10 @@ export interface PutOutput<T> {
 }
 
 export interface HeadUpdaterInput<THead, TCurrent> {
-  // head is the head that will replace the current head. At sequence 0, the
-  // head is the initial value. To view the current head value stored in the
-  // database, see storedHead.
+  // head value of the facet.
   head: THead;
-  // stored is the current value of the head that is stored in the database.
-  stored: THead | null;
-  // storedSeq is the sequence  number of the current stored head value.
-  storedSeq: number;
+  // headSeq is the sequence number of the current head value.
+  headSeq: number;
   // current data that is modifying the head.
   current: TCurrent;
   currentSeq: number;
@@ -128,15 +125,36 @@ export class Facet<T> {
     result.data = sortData(result.data);
     return result;
   }
-  async put(id: string, ...newData: Array<Data<any>>) {
+  // append new data to an item. This method executes two database commands, 
+  // one to retrieve the current head value, and one to put the updated head back.
+  async append(id: string, ...newData: Array<Data<any>>): Promise<ChangeOutput<T>> {
+    const headRecord = await this.get(id);
+    const head = headRecord ? headRecord.item : this.initial();
+    const seq = headRecord ? headRecord.record._seq : 1;
+    return this.appendTo(id, head, seq, ...newData);
+  }
+  // appendTo appends new data to an item that has already been retrieved from the
+  // database. This method executes a single database command to update the head
+  // record.
+  async appendTo(id: string, head: T, seq: number, ...newData: Array<Data<any>>) {
+    return this.calculate(id, head, seq, new Array<DataRecord>(), ...newData);
+  }
+  // recalculate all the state by reading all previous records in the facet item and
+  // processing each data record.
+  async recalculate(id: string, ...newData: Array<Data<any>>): Promise<ChangeOutput<T>> {
     // Get the records.
     const records = await this.records(id);
-    const seq = records.head ? records.head._seq + 1 : 1;
+    const seq = records.head ? records.head._seq : 1;
+    const head = this.initial();
+    return this.calculate(id, head, seq, records.data, ...newData);
+  }
+  // calculate the head.
+  private async calculate(id: string, head: T, seq: number, currentData: Array<DataRecord>, ...newData: Array<Data<any>>): Promise<ChangeOutput<T>> {
     const newDataRecords = newData.map((typeNameToData) =>
       newDataRecord(
         this.name,
         id,
-        seq,
+        seq + 1,
         typeNameToData.typeName,
         typeNameToData.data
       )
@@ -144,38 +162,36 @@ export class Facet<T> {
     const newEvents = new Array<EventRecord>();
     const facetName = this.name;
     const rules = this.rules;
-    const data = [...records.data, ...newDataRecords];
-    let head = this.initial();
+    const data = [...currentData, ...newDataRecords];
     data.forEach((curr, idx) => {
       const updater = rules.get(curr._typ);
       if (updater) {
         head = updater({
           head: head,
-          stored: records.head ? (JSON.parse(records.head._itm) as T) : null,
-          storedSeq: records.head?._seq,
+          headSeq: seq,
           current: JSON.parse(curr._itm),
           currentSeq: curr._seq,
           all: data,
           index: idx,
           publish: (eventName: string, event: any) =>
             newEvents.push(
-              newEventRecord(facetName, id, seq, eventName, event)
+              newEventRecord(facetName, id, seq+1, eventName, event)
             ),
         } as HeadUpdaterInput<T, any>);
       }
     });
     // Write the head transaction back.
     await this.db.putHead(
-      newHeadRecord(this.name, id, seq, head),
+      newHeadRecord(this.name, id, seq+1, head),
       newDataRecords,
       newEvents
     );
     return {
       id: id,
-      seq: seq,
+      seq: seq+1,
       head: head,
       events: newEvents,
-    } as PutOutput<T>;
+    } as ChangeOutput<T>;
   }
 }
 
