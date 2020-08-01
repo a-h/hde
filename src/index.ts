@@ -8,28 +8,47 @@ import {
   isHeadRecord,
   newDataRecord,
   newHeadRecord,
-  EventDB,
+  newEventRecord,
 } from "./records";
-import { DocumentClient } from "aws-sdk/clients/dynamodb";
 
 export interface GetOutput<T> {
   record: Record;
   item: T;
 }
 
-export interface RecordsOutput {
-  head: HeadRecord;
+interface RecordsOutput {
+  head: HeadRecord | null;
   data: Array<DataRecord>;
   events: Array<EventRecord>;
 }
 
+export interface PutOutput<T> {
+  id: string;
+  seq: number;
+  head: T;
+  events: Array<any>;
+}
+
 export interface HeadUpdaterInput<THead, TCurrent> {
+  // head is the head that will replace the current head. At sequence 0, the
+  // head is the initial value. To view the current head value stored in the
+  // database, see storedHead.
   head: THead;
-  headSeq: number;
+  // stored is the current value of the head that is stored in the database.
+  stored: THead | null;
+  // storedSeq is the sequence  number of the current stored head value.
+  storedSeq: number;
+  // current data that is modifying the head.
   current: TCurrent;
   currentSeq: number;
+  // all allows access to all of the records, new and old.
   all: Array<DataRecord>;
+  // current index within the sorted records.
   index: number;
+  // publish an event. This should be idempotent, i.e. only call this if the
+  // currentSeq > headSeq to avoid sending out duplicate messages on recalculation
+  // of the head.
+  publish: (name: string, event: any) => void;
 }
 
 // HeadUpdater<THead, TCurrent> defines a function used to update head based on the current type.
@@ -50,7 +69,7 @@ export type RecordName = string;
 export type RecordType = any;
 export type EmptyFacet<T> = () => T;
 
-interface DB {
+export interface DB {
   getHead(id: string): Promise<Record>;
   getRecords(id: string): Promise<Array<Record>>;
   putHead(
@@ -63,19 +82,18 @@ interface DB {
 export class Facet<T> {
   name: string;
   rules: Map<RecordName, HeadUpdater<T, RecordType>>;
-  emptyFacet: EmptyFacet<T>;
+  initial: EmptyFacet<T>;
   db: DB;
   constructor(
-    client: DocumentClient,
-    table: string,
+    db: DB,
     name: string,
     rules: Map<RecordName, HeadUpdater<T, RecordType>>,
-    emptyFacet: EmptyFacet<T> = () => ({} as T)
+    initial: EmptyFacet<T> = () => ({} as T)
   ) {
     this.name = name;
     this.rules = rules;
-    this.emptyFacet = emptyFacet;
-    this.db = new EventDB(client, table, name);
+    this.initial = initial;
+    this.db = db;
   }
   async get(id: string): Promise<GetOutput<T> | null> {
     const head = await this.db.getHead(id);
@@ -92,43 +110,27 @@ export class Facet<T> {
       data: new Array<DataRecord>(),
       events: new Array<EventRecord>(),
     } as RecordsOutput;
-    records.forEach((r) => {
-      if (isDataRecord(r)) {
-        result.data.push(r);
-        return;
-      }
-      if (isEventRecord(r)) {
-        result.events.push(r);
-        return;
-      }
-      if (isHeadRecord(r)) {
-        result.head = r as HeadRecord;
-      }
-    });
+    if (records) {
+      records.forEach((r) => {
+        if (isDataRecord(r)) {
+          result.data.push(r);
+          return;
+        }
+        if (isEventRecord(r)) {
+          result.events.push(r);
+          return;
+        }
+        if (isHeadRecord(r)) {
+          result.head = r as HeadRecord;
+        }
+      });
+    }
+    result.data = sortData(result.data);
     return result;
   }
   async put(id: string, ...newData: Array<Data<any>>) {
     // Get the records.
     const records = await this.records(id);
-    // Apply the updates to the head.
-    const data = records.data.sort((a, b) => {
-      if (a._seq < b._seq) {
-        return -1;
-      }
-      if (a._seq === b._seq) {
-        if (a._ts < b._ts) {
-          return -1;
-        }
-        if (a._ts === b._ts) {
-          return 0;
-        }
-        return 1;
-      }
-      return 1;
-    });
-    let head = records.head?._itm
-      ? (JSON.parse(records.head._itm) as T)
-      : this.emptyFacet();
     const seq = records.head ? records.head._seq + 1 : 1;
     const newDataRecords = newData.map((typeNameToData) =>
       newDataRecord(
@@ -139,17 +141,26 @@ export class Facet<T> {
         typeNameToData.data
       )
     );
+    const newEvents = new Array<EventRecord>();
+    const facetName = this.name;
     const rules = this.rules;
-    [...data, ...newDataRecords].forEach((curr, idx) => {
+    const data = [...records.data, ...newDataRecords];
+    let head = this.initial();
+    data.forEach((curr, idx) => {
       const updater = rules.get(curr._typ);
       if (updater) {
         head = updater({
           head: head,
-          headSeq: records.head._seq,
+          stored: records.head ? (JSON.parse(records.head._itm) as T) : null,
+          storedSeq: records.head?._seq,
           current: JSON.parse(curr._itm),
           currentSeq: curr._seq,
           all: data,
           index: idx,
+          publish: (eventName: string, event: any) =>
+            newEvents.push(
+              newEventRecord(facetName, id, seq, eventName, event)
+            ),
         } as HeadUpdaterInput<T, any>);
       }
     });
@@ -157,7 +168,30 @@ export class Facet<T> {
     await this.db.putHead(
       newHeadRecord(this.name, id, seq, head),
       newDataRecords,
-      []
+      newEvents
     );
+    return {
+      id: id,
+      seq: seq,
+      head: head,
+      events: newEvents,
+    } as PutOutput<T>;
   }
 }
+
+const sortData = (data: Array<Record>): Array<Record> =>
+  data.sort((a, b) => {
+    if (a._seq < b._seq) {
+      return -1;
+    }
+    if (a._seq === b._seq) {
+      if (a._ts < b._ts) {
+        return -1;
+      }
+      if (a._ts === b._ts) {
+        return 0;
+      }
+      return 1;
+    }
+    return 1;
+  });

@@ -1,5 +1,12 @@
 import * as AWS from "aws-sdk";
-import { Facet, HeadUpdaterInput, Data, HeadUpdater } from "../../src";
+import {
+  Facet,
+  HeadUpdaterInput,
+  Data,
+  RecordName,
+  HeadUpdater,
+} from "../../src";
+import { EventDB } from "../../src/records";
 
 // The account Facet has multiple records.
 // Head: The current "AccountBalance".
@@ -46,6 +53,7 @@ const demonstrateLedger = async () => {
     region: "eu-west-2",
   });
   const tableName = "ledger";
+  const db = new EventDB(client, tableName, AccountBalanceRecordName);
 
   // The rules define how the AccountBalance is updated by incoming Data events.
   // For example, and incoming "TRANSACTION" record modifies the "ACCOUNT_BALANCE" record.
@@ -54,14 +62,11 @@ const demonstrateLedger = async () => {
   // between the transaction starting (reading all the records), and completing (updating
   // the head), another record will have been inserted, resulting in the transaction
   // failing and needing to be executed again.
-  const rules = new Map<string, HeadUpdater<AccountBalance, any>>();
+  const rules = new Map<RecordName, HeadUpdater<AccountBalance, any>>();
   rules.set(
     TransactionRecordName,
     (input: HeadUpdaterInput<AccountBalance, Transaction>): AccountBalance => {
-      // Only change the balance on new records.
-      if (input.currentSeq > input.headSeq) {
-        input.head.balance += input.current.amount;
-      }
+      input.head.balance += input.current.amount;
       return input.head;
     }
   );
@@ -77,18 +82,17 @@ const demonstrateLedger = async () => {
   );
 
   // New accounts start with a balance of zero.
-  const emptyAccount = (): AccountBalance =>
+  const initalAccount = (): AccountBalance =>
     ({
       balance: 0,
     } as AccountBalance);
 
   // Can now create a ledger "Facet" in our DynamoDB table.
   const ledger = new Facet<AccountBalance>(
-    client,
-    tableName,
+    db,
     AccountBalanceRecordName,
     rules,
-    emptyAccount
+    initalAccount
   );
 
   // Let's create a new account.
