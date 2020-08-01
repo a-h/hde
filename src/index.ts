@@ -16,16 +16,10 @@ export interface GetOutput<T> {
   item: T;
 }
 
-interface RecordsOutput {
-  head: HeadRecord | null;
-  data: Array<DataRecord>;
-  events: Array<EventRecord>;
-}
-
 export interface ChangeOutput<T> {
   id: string;
   seq: number;
-  head: T;
+  item: T;
   events: Array<any>;
 }
 
@@ -52,6 +46,8 @@ export type HeadUpdater<THead, TCurrent> = (
   input: HeadUpdaterInput<THead, TCurrent>
 ) => THead;
 
+// Data that makes up the facet item. Reading through all the data, and applying the rules creates
+// a materialised view. This view is the "HEAD" record stored in the database.
 export class Data<T> {
   typeName: string;
   data: T;
@@ -63,8 +59,12 @@ export class Data<T> {
 
 export type RecordName = string;
 export type RecordType = any;
+// EmptyFacet constructs the default value of a facet item. For example, if the facet is a 
+// bank account, perhaps the starting balance would be zero, and an overdraft of 1000 would
+// be set.
 export type EmptyFacet<T> = () => T;
 
+// DB is the database access required by Facet<T>. Use EventDB.
 export interface DB {
   getHead(id: string): Promise<Record>;
   getRecords(id: string): Promise<Array<Record>>;
@@ -75,6 +75,20 @@ export interface DB {
   ): Promise<void>;
 }
 
+// recordsOutput is the return type of the records method.
+interface RecordsOutput {
+  head: HeadRecord | null;
+  data: Array<DataRecord>;
+  events: Array<EventRecord>;
+}
+
+// A Facet is a type of record stored in a DynamoDB table. It's constructed of a 
+// "head" record that contains a view of the up-to-date item, multiple "data" records 
+// (usually events) that result in a changes to the item, and "event" records that
+// are used to send messages asynchronously using DynamoDB Streams. This allows messages
+// to be queued for delivery at the same time as the transaction is comitted, removing
+// the risk of an item being updated, but a message not being sent (e.g. because SQS
+// was temporarily unavailable).
 export class Facet<T> {
   name: string;
   rules: Map<RecordName, HeadUpdater<T, RecordType>>;
@@ -139,11 +153,12 @@ export class Facet<T> {
     return this.calculate(id, head, seq, new Array<DataRecord>(), ...newData);
   }
   // recalculate all the state by reading all previous records in the facet item and
-  // processing each data record.
+  // processing each data record. This method may execute multiple Query operations
+  // and a single put operation.
   async recalculate(id: string, ...newData: Array<Data<any>>): Promise<ChangeOutput<T>> {
     // Get the records.
     const records = await this.records(id);
-    const seq = records.head ? records.head._seq : 1;
+    const seq = records.head ? records.head._seq : 0;
     const head = this.initial();
     return this.calculate(id, head, seq, records.data, ...newData);
   }
@@ -188,25 +203,33 @@ export class Facet<T> {
     return {
       id: id,
       seq: seq+1,
-      head: head,
+      item: head,
       events: newEvents,
     } as ChangeOutput<T>;
   }
 }
 
+// sortData sorts data records by their sequence number ascending, then
+// by their timestamp field value, then by their range key.
 const sortData = (data: Array<Record>): Array<Record> =>
   data.sort((a, b) => {
-    if (a._seq < b._seq) {
-      return -1;
-    }
-    if (a._seq === b._seq) {
-      if (a._ts < b._ts) {
-        return -1;
+    const bySeq = cmp(a._seq, b._seq);
+    if(bySeq === 0) {
+      const byTimestamp = cmp(a._ts, b._ts);
+      if(byTimestamp === 0) {
+        return cmp(a._rng, b._rng);
       }
-      if (a._ts === b._ts) {
-        return 0;
-      }
-      return 1;
+      return byTimestamp;
     }
-    return 1;
+    return bySeq;
   });
+
+const cmp = (a: string| number, b: string|number): number => {
+  if(a < b) {
+    return -1;
+  }
+  if (a === b) {
+    return 0;
+  }
+  return 1;
+};

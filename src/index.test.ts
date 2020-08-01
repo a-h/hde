@@ -92,7 +92,7 @@ describe("facet", () => {
       );
 
       expect(putOutput.id).toEqual("id");
-      expect(putOutput.head).toEqual({});
+      expect(putOutput.item).toEqual({});
       expect(putOutput.events).toHaveLength(0);
       expect(putOutput.seq).toBe(1);
     });
@@ -109,7 +109,7 @@ describe("facet", () => {
       );
 
       expect(putOutput.id).toEqual("id");
-      expect(putOutput.head).toEqual(initial);
+      expect(putOutput.item).toEqual(initial);
       expect(putOutput.events).toHaveLength(0);
       expect(putOutput.seq).toBe(1);
     });
@@ -145,7 +145,7 @@ describe("facet", () => {
       const expected: TestHead = { a: "0_1_2", b: "empty" };
 
       expect(putOutput.id).toEqual("id");
-      expect(putOutput.head).toEqual(expected);
+      expect(putOutput.item).toEqual(expected);
       expect(putOutput.events).toHaveLength(0);
       expect(putOutput.seq).toBe(1);
     });
@@ -190,7 +190,7 @@ describe("facet", () => {
       );
 
       expect(putOutput.id).toEqual("id");
-      expect(putOutput.head).toEqual(expected);
+      expect(putOutput.item).toEqual(expected);
       expect(putOutput.events).toHaveLength(0);
       expect(putOutput.seq).toBe(4);
     });

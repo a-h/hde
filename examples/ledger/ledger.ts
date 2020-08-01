@@ -137,7 +137,7 @@ const demonstrateLedger = async () => {
   // meantime, the transaction will succeed.
   await ledger.appendTo(
     accountId,
-    transactionCResult.head,
+    transactionCResult.item,
     transactionCResult.seq,
     new Data<Transaction>(TransactionRecordName, {
       desc: "Transaction D",
@@ -151,7 +151,7 @@ const demonstrateLedger = async () => {
 
   // Verify the final balance by reading all of the transactions and re-calculating.
   const verifiedBalance = await ledger.recalculate(accountId);
-  console.log(`Verified balance: ${JSON.stringify(verifiedBalance.head)}`);
+  console.log(`Verified balance: ${JSON.stringify(verifiedBalance.item)}`);
 
   // The re-calculation can also take data to modify the result.
   const finalBalance = await ledger.recalculate(
@@ -161,7 +161,7 @@ const demonstrateLedger = async () => {
       amount: 25,
     })
   );
-  console.log(`Final balance: ${JSON.stringify(finalBalance.head)}`);
+  console.log(`Final balance: ${JSON.stringify(finalBalance.item)}`);
 };
 
 demonstrateLedger()
