@@ -10,7 +10,6 @@ import {
   newHeadRecord,
   newEventRecord,
 } from "./records";
-import {Put} from "aws-sdk/clients/dynamodb";
 
 export interface GetOutput<T> {
   record: Record;
