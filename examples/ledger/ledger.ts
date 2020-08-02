@@ -1,11 +1,12 @@
 import * as AWS from "aws-sdk";
-import { Facet, Data } from "../../src";
+import { Facet } from "../../src";
 import { EventDB } from "../../src/db";
 import {
   Processor,
   RecordTypeName,
   HeadUpdater,
   HeadUpdaterInput,
+  Data,
 } from "../../src/processor";
 
 // The account Facet has multiple records.

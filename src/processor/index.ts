@@ -7,27 +7,28 @@ export type HeadUpdater<THead, TCurrent> = (
 export interface HeadUpdaterInput<THead, TCurrent> {
   // head value of the facet.
   head: THead;
-  // headSeq is the sequence number of the current head value.
-  headSeq: number;
   // current data that is modifying the head.
   current: TCurrent;
-  currentSeq: number;
+  // data that already exists.
+  existingData: Array<Data<any>>;
+  // data that is being added.
+  newData: Array<Data<any>>;
   // all allows access to all of the data, new and old.
-  all: Array<SequenceData<any>>;
-  // current index within the sorted records.
-  index: number;
+  all: Array<Data<any>>;
+  // current index within the data.
+  currentIndex: number;
+  // The index of the latest datad within all data.
+  headIndex: number;
   // publish an event.
   publish: (name: string, event: any) => void;
 }
 
-// SequenceData is data that makes up the facet item. Reading through all the data, and applying the rules creates
+// Data is data that makes up the facet item. Reading through all the data, and applying the rules creates
 // a materialised view. This view is the "HEAD" record stored in the database.
-export class SequenceData<T> {
-  seq: number;
+export class Data<T> {
   typeName: string;
   data: T | null;
-  constructor(seq: number, typeName: string, data: T | null) {
-    this.seq = seq;
+  constructor(typeName: string, data: T | null) {
     this.typeName = typeName;
     this.data = data;
   }
@@ -44,9 +45,9 @@ export type RecordType = any;
 export type Initializer<T> = () => T;
 
 export interface ProcessResult<T> {
-  head: SequenceData<T>;
-  pastEvents: Array<SequenceData<any>>;
-  newEvents: Array<SequenceData<any>>;
+  head: T;
+  pastEvents: Array<Data<any>>;
+  newEvents: Array<Data<any>>;
 }
 
 // A Processor processes events and updates the state of the head record.
@@ -61,43 +62,37 @@ export class Processor<T> {
     this.initial = initial;
   }
   process(
-    head: SequenceData<T>,
-    existingData: Array<SequenceData<any>>,
-    newData: Array<SequenceData<any>>
+    head: T | null,
+    existingData: Array<Data<any>> = new Array<Data<any>>(),
+    newData: Array<Data<any>> = new Array<Data<any>>()
   ): ProcessResult<T> {
-    const result: ProcessResult<T> = {
-      head: head,
-      pastEvents: new Array<SequenceData<any>>(),
-      newEvents: new Array<SequenceData<any>>(),
-    };
-    // Initialize the head if required.
-    if (result.head.data == null) {
-      result.head.data = this.initial();
-    }
-    const rules = this.rules;
-    let latestSeq = result.head.seq + newData.length;
     const allData = [...existingData, ...newData];
+    const result: ProcessResult<T> = {
+      head: head || this.initial(),
+      pastEvents: new Array<Data<any>>(),
+      newEvents: new Array<Data<any>>(),
+    };
+    const rules = this.rules;
     allData.forEach((curr, idx) => {
       const updater = rules.get(curr.typeName);
       if (updater) {
-        result.head.data = updater({
-          head: result.head.data,
-          headSeq: result.head.seq,
+        result.head = updater({
+          head: result.head,
+          existingData: existingData,
+          newData: newData,
           current: curr.data,
-          currentSeq: curr.seq,
+          currentIndex: idx,
           all: allData,
-          index: idx,
+          headIndex: existingData.length,
           publish: (eventName: string, event: any) => {
-            const ed = new SequenceData(latestSeq, eventName, event);
-            curr.seq > head.seq
+            const ed = new Data(eventName, event);
+            idx >= existingData.length
               ? result.newEvents.push(ed)
               : result.pastEvents.push(ed);
-            latestSeq++;
           },
-        } as HeadUpdaterInput<T, any>);
+        });
       }
     });
-    result.head.seq = latestSeq;
     return result;
   }
 }

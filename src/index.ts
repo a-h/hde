@@ -10,7 +10,7 @@ import {
   newHeadRecord,
   newEventRecord,
 } from "./db";
-import { Processor, SequenceData } from "./processor";
+import { Processor, Data } from "./processor";
 
 export interface GetOutput<T> {
   record: Record;
@@ -18,21 +18,9 @@ export interface GetOutput<T> {
 }
 
 export interface ChangeOutput<T> {
-  id: string;
   seq: number;
   item: T;
   events: Array<any>;
-}
-
-// Data that makes up the facet item. Reading through all the data, and applying the rules creates
-// a materialised view. This view is the "HEAD" record stored in the database.
-export class Data<T> {
-  typeName: string;
-  data: T;
-  constructor(typeName: string, data: T) {
-    this.typeName = typeName;
-    this.data = data;
-  }
 }
 
 // DB is the database access required by Facet<T>. Use EventDB.
@@ -145,19 +133,20 @@ export class Facet<T> {
     currentData: Array<DataRecord>,
     ...newData: Array<Data<any>>
   ): Promise<ChangeOutput<T>> {
-    // Get the records ready for reprocessing.
-    const headSequence = new SequenceData<T>(seq, this.name, head);
+    if(newData == null) {
+      newData = new Array<Data<any>>();
+    }
     const existingDataSequence = currentData.map(
-      (d, i): SequenceData<any> =>
-        new SequenceData<any>(i + 1, d._typ, JSON.parse(d._itm))
+      d =>
+        new Data<any>(d._typ, JSON.parse(d._itm))
     );
     const newDataSequence = newData.map(
-      (d, i) => new SequenceData(seq + 1 + i, d.typeName, d.data)
+      d => new Data(d.typeName, d.data)
     );
 
     // Process the data.
     const processingResult = this.processor.process(
-      headSequence,
+      head,
       existingDataSequence,
       newDataSequence
     );
@@ -167,23 +156,22 @@ export class Facet<T> {
     const hr = newHeadRecord(
       this.name,
       id,
-      processingResult.head.seq,
-      processingResult.head.data,
+      seq + newData.length,
+      processingResult.head,
       now
     );
     const newDataRecords = newData.map((d, i) =>
       newDataRecord(this.name, id, seq + 1 + i, d.typeName, d.data, now)
     );
     const newEventRecords = processingResult.newEvents.map((e) =>
-      newEventRecord(this.name, id, e.seq, e.typeName, e.data, now)
+      newEventRecord(this.name, id, seq + newData.length, e.typeName, e.data, now)
     );
 
     // Write the new records to the database.
     await this.db.putHead(hr, seq, newDataRecords, newEventRecords);
     return {
-      id: id,
-      seq: processingResult.head.seq,
-      item: processingResult.head.data,
+      seq: hr._seq,
+      item: processingResult.head,
       events: processingResult.newEvents,
     } as ChangeOutput<T>;
   }

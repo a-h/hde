@@ -1,10 +1,11 @@
-import { Facet, DB, GetOutput, Data } from ".";
+import { Facet, DB, GetOutput } from ".";
 import {
   RecordTypeName,
   HeadUpdater,
   RecordType,
   HeadUpdaterInput,
   Processor,
+  Data,
 } from "./processor";
 import {
   Record,
@@ -53,7 +54,10 @@ describe("facet", () => {
   describe("get", () => {
     it("returns null when the db returns null", async () => {
       const db = new MockDB();
-      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
+      const emptyRules = new Map<
+        RecordTypeName,
+        HeadUpdater<any, RecordType>
+      >();
       const processor = new Processor<any>(emptyRules);
       const facet = new Facet<any>("name", db, processor);
 
@@ -71,7 +75,10 @@ describe("facet", () => {
       };
       const db = new MockDB();
       db.getHead = async () => expectedRecord;
-      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
+      const emptyRules = new Map<
+        RecordTypeName,
+        HeadUpdater<any, RecordType>
+      >();
       const processor = new Processor<any>(emptyRules);
       const facet = new Facet<any>("name", db, processor);
 
@@ -83,7 +90,10 @@ describe("facet", () => {
   describe("recalculate", () => {
     it("creates an empty head record on first put if it doesn't exist", async () => {
       const db = new MockDB();
-      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
+      const emptyRules = new Map<
+        RecordTypeName,
+        HeadUpdater<any, RecordType>
+      >();
       const processor = new Processor<any>(emptyRules);
       const facet = new Facet<any>("name", db, processor);
       const data: TestData = { data1: "1", data2: "2" };
@@ -93,7 +103,6 @@ describe("facet", () => {
         new Data<TestData>("TestData", data)
       );
 
-      expect(putOutput.id).toEqual("id");
       expect(putOutput.item).toEqual({});
       expect(putOutput.events).toHaveLength(0);
       expect(putOutput.seq).toBe(1);
@@ -101,7 +110,10 @@ describe("facet", () => {
     it("creates an initial head record on first put if it doesn't exist", async () => {
       const db = new MockDB();
       const initial: TestHead = { a: "empty", b: "empty" };
-      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
+      const emptyRules = new Map<
+        RecordTypeName,
+        HeadUpdater<any, RecordType>
+      >();
       const processor = new Processor<TestHead>(emptyRules, () => initial);
       const facet = new Facet<any>("name", db, processor);
       const data: TestData = { data1: "1", data2: "2" };
@@ -111,7 +123,6 @@ describe("facet", () => {
         new Data<TestData>("TestData", data)
       );
 
-      expect(putOutput.id).toEqual("id");
       expect(putOutput.item).toEqual(initial);
       expect(putOutput.events).toHaveLength(0);
       expect(putOutput.seq).toBe(1);
@@ -146,7 +157,6 @@ describe("facet", () => {
 
       const expected: TestHead = { a: "0_1_2", b: "empty" };
 
-      expect(putOutput.id).toEqual("id");
       expect(putOutput.item).toEqual(expected);
       expect(putOutput.events).toHaveLength(0);
       expect(putOutput.seq).toBe(2);
@@ -191,7 +201,6 @@ describe("facet", () => {
         new Data<TestData>("TestData", data3)
       );
 
-      expect(putOutput.id).toEqual("id");
       expect(putOutput.item).toEqual(expected);
       expect(putOutput.events).toHaveLength(0);
       expect(putOutput.seq).toBe(4);
