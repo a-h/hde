@@ -10,7 +10,7 @@ import {
   newHeadRecord,
   newEventRecord,
 } from "./db";
-import {Processor, SequenceData} from "./processor";
+import { Processor, SequenceData } from "./processor";
 
 export interface GetOutput<T> {
   record: Record;
@@ -164,28 +164,22 @@ export class Facet<T> {
 
     // Create new records.
     const now = new Date();
-    const hr = newHeadRecord(this.name, id, processingResult.head.seq, processingResult.head.data, now);
+    const hr = newHeadRecord(
+      this.name,
+      id,
+      processingResult.head.seq,
+      processingResult.head.data,
+      now
+    );
     const newDataRecords = newData.map((d, i) =>
-      newDataRecord(
-        this.name,
-        id,
-        seq + 1 + i,
-        d.typeName,
-        d.data,
-        now
-      )
+      newDataRecord(this.name, id, seq + 1 + i, d.typeName, d.data, now)
     );
     const newEventRecords = processingResult.newEvents.map((e) =>
       newEventRecord(this.name, id, e.seq, e.typeName, e.data, now)
     );
 
     // Write the new records to the database.
-    await this.db.putHead(
-      hr,
-      seq,
-      newDataRecords,
-      newEventRecords
-    );
+    await this.db.putHead(hr, seq, newDataRecords, newEventRecords);
     return {
       id: id,
       seq: processingResult.head.seq,
@@ -195,27 +189,14 @@ export class Facet<T> {
   }
 }
 
-// sortData sorts data records by their sequence number ascending, then
-// by their timestamp field value, then by their range key.
+// sortData sorts data records by their sequence number ascending.
 const sortData = (data: Array<Record>): Array<Record> =>
   data.sort((a, b) => {
-    const bySeq = cmp(a._seq, b._seq);
-    if (bySeq === 0) {
-      const byTimestamp = cmp(a._ts, b._ts);
-      if (byTimestamp === 0) {
-        return cmp(a._rng, b._rng);
-      }
-      return byTimestamp;
+    if (a._seq < b._seq) {
+      return -1;
     }
-    return bySeq;
+    if (a._seq === b._seq) {
+      return 0;
+    }
+    return 1;
   });
-
-const cmp = (a: string | number, b: string | number): number => {
-  if (a < b) {
-    return -1;
-  }
-  if (a === b) {
-    return 0;
-  }
-  return 1;
-};
