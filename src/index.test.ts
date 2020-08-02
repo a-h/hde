@@ -1,14 +1,11 @@
+import { Facet, DB, GetOutput, Data } from ".";
 import {
-  Facet,
-  RecordName,
+  RecordTypeName,
   HeadUpdater,
   RecordType,
-  DB,
-  GetOutput,
-  Data,
   HeadUpdaterInput,
   Processor,
-} from ".";
+} from "./processor";
 import {
   Record,
   HeadRecord,
@@ -16,12 +13,13 @@ import {
   EventRecord,
   newHeadRecord,
   newDataRecord,
-} from "./records";
+} from "./db";
 
 type GetHead = (id: string) => Promise<Record>;
 type GetRecords = (id: string) => Promise<Array<Record>>;
 type PutHead = (
   head: HeadRecord,
+  previousSeq: number,
   data: Array<DataRecord>,
   events: Array<EventRecord>
 ) => Promise<void>;
@@ -55,7 +53,7 @@ describe("facet", () => {
   describe("get", () => {
     it("returns null when the db returns null", async () => {
       const db = new MockDB();
-      const emptyRules = new Map<RecordName, HeadUpdater<any, RecordType>>();
+      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
       const processor = new Processor<any>(emptyRules);
       const facet = new Facet<any>("name", db, processor);
 
@@ -73,7 +71,7 @@ describe("facet", () => {
       };
       const db = new MockDB();
       db.getHead = async () => expectedRecord;
-      const emptyRules = new Map<RecordName, HeadUpdater<any, RecordType>>();
+      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
       const processor = new Processor<any>(emptyRules);
       const facet = new Facet<any>("name", db, processor);
 
@@ -85,7 +83,7 @@ describe("facet", () => {
   describe("recalculate", () => {
     it("creates an empty head record on first put if it doesn't exist", async () => {
       const db = new MockDB();
-      const emptyRules = new Map<RecordName, HeadUpdater<any, RecordType>>();
+      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
       const processor = new Processor<any>(emptyRules);
       const facet = new Facet<any>("name", db, processor);
       const data: TestData = { data1: "1", data2: "2" };
@@ -103,7 +101,7 @@ describe("facet", () => {
     it("creates an initial head record on first put if it doesn't exist", async () => {
       const db = new MockDB();
       const initial: TestHead = { a: "empty", b: "empty" };
-      const emptyRules = new Map<RecordName, HeadUpdater<any, RecordType>>();
+      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
       const processor = new Processor<TestHead>(emptyRules, () => initial);
       const facet = new Facet<any>("name", db, processor);
       const data: TestData = { data1: "1", data2: "2" };
@@ -122,7 +120,7 @@ describe("facet", () => {
       const db = new MockDB();
       const initial: TestHead = { a: "0", b: "empty" };
       const concatenateDataValuesToHead = new Map<
-        RecordName,
+        RecordTypeName,
         HeadUpdater<TestHead, RecordType>
       >();
       concatenateDataValuesToHead.set(
@@ -132,12 +130,11 @@ describe("facet", () => {
           return input.head;
         }
       );
-      const processor = new Processor<TestHead>(concatenateDataValuesToHead, () => initial);
-      const facet = new Facet<TestHead>(
-        "name",
-        db,
-        processor,
+      const processor = new Processor<TestHead>(
+        concatenateDataValuesToHead,
+        () => initial
       );
+      const facet = new Facet<TestHead>("name", db, processor);
       const data1: TestData = { data1: "1", data2: "" };
       const data2: TestData = { data1: "2", data2: "" };
 
@@ -160,7 +157,7 @@ describe("facet", () => {
 
       // Create the rules.
       const concatenateDataValuesToHead = new Map<
-        RecordName,
+        RecordTypeName,
         HeadUpdater<any, RecordType>
       >();
       concatenateDataValuesToHead.set(
@@ -170,12 +167,11 @@ describe("facet", () => {
           return input.head;
         }
       );
-      const processor = new Processor<TestHead>(concatenateDataValuesToHead, () => initial);
-      const facet = new Facet<TestHead>(
-        "name",
-        db,
-        processor,
+      const processor = new Processor<TestHead>(
+        concatenateDataValuesToHead,
+        () => initial
       );
+      const facet = new Facet<TestHead>("name", db, processor);
       // Configure the database to already have data1 and data2 present.
       const now = new Date();
       const currentHead: TestHead = { a: "0_1_2", b: "empty" };
@@ -186,7 +182,7 @@ describe("facet", () => {
         new Array<Record>(
           newHeadRecord<TestHead>("TestHead", "id", 3, currentHead, now),
           newDataRecord<TestData>("TestHead", "id", 1, "TestData", data1, now),
-          newDataRecord<TestData>("TestHead", "id", 2, "TestData", data2, now),
+          newDataRecord<TestData>("TestHead", "id", 2, "TestData", data2, now)
         );
 
       const expected: TestHead = { a: "0_1_2_3", b: "empty" };

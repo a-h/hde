@@ -1,13 +1,7 @@
 import * as AWS from "aws-sdk";
-import {
-  Facet,
-  HeadUpdaterInput,
-  Data,
-  RecordName,
-  HeadUpdater,
-  Processor,
-} from "../../src";
-import { EventDB } from "../../src/records";
+import { Facet, Data } from "../../src";
+import { EventDB } from "../../src/db";
+import { Processor, RecordTypeName, HeadUpdater, HeadUpdaterInput } from "../../src/processor";
 
 // The account Facet has multiple records.
 // Head: The current "AccountBalance".
@@ -63,7 +57,7 @@ const demonstrateLedger = async () => {
   // between the transaction starting (reading all the records), and completing (updating
   // the head), another record will have been inserted, resulting in the transaction
   // failing and needing to be executed again.
-  const rules = new Map<RecordName, HeadUpdater<AccountBalance, any>>();
+  const rules = new Map<RecordTypeName, HeadUpdater<AccountBalance, any>>();
   rules.set(
     TransactionRecordName,
     (input: HeadUpdaterInput<AccountBalance, Transaction>): AccountBalance => {

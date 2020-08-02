@@ -9,7 +9,8 @@ import {
   newDataRecord,
   newHeadRecord,
   newEventRecord,
-} from "./records";
+} from "./db";
+import {Processor, SequenceData} from "./processor";
 
 export interface GetOutput<T> {
   record: Record;
@@ -23,29 +24,6 @@ export interface ChangeOutput<T> {
   events: Array<any>;
 }
 
-export interface HeadUpdaterInput<THead, TCurrent> {
-  // head value of the facet.
-  head: THead;
-  // headSeq is the sequence number of the current head value.
-  headSeq: number;
-  // current data that is modifying the head.
-  current: TCurrent;
-  currentSeq: number;
-  // all allows access to all of the records, new and old.
-  all: Array<SequenceData<any>>;
-  // current index within the sorted records.
-  index: number;
-  // publish an event. This should be idempotent, i.e. only call this if the
-  // currentSeq > headSeq to avoid sending out duplicate messages on recalculation
-  // of the head.
-  publish: (name: string, event: any) => void;
-}
-
-// HeadUpdater<THead, TCurrent> defines a function used to update head based on the current type.
-export type HeadUpdater<THead, TCurrent> = (
-  input: HeadUpdaterInput<THead, TCurrent>
-) => THead;
-
 // Data that makes up the facet item. Reading through all the data, and applying the rules creates
 // a materialised view. This view is the "HEAD" record stored in the database.
 export class Data<T> {
@@ -54,82 +32,6 @@ export class Data<T> {
   constructor(typeName: string, data: T) {
     this.typeName = typeName;
     this.data = data;
-  }
-}
-
-export type RecordName = string;
-export type RecordType = any;
-// EmptyFacet constructs the default value of a facet item. For example, if the facet is a
-// bank account, perhaps the starting balance would be zero, and an overdraft of 1000 would
-// be set.
-export type EmptyFacet<T> = () => T;
-
-class SequenceData<T> {
-  seq: number;
-  typeName: string;
-  data: T | null;
-  constructor(seq: number, typeName: string, data: T | null) {
-    this.seq = seq;
-    this.typeName = typeName;
-    this.data = data;
-  }
-}
-
-export interface ProcessResult<T> {
-  head: SequenceData<T>;
-  pastEvents: Array<SequenceData<any>>;
-  newEvents: Array<SequenceData<any>>;
-}
-
-export class Processor<T> {
-  rules: Map<RecordName, HeadUpdater<T, RecordType>>;
-  initial: EmptyFacet<T>;
-  constructor(
-    rules: Map<RecordName, HeadUpdater<T, RecordType>>,
-    initial: EmptyFacet<T> = () => ({} as T)
-  ) {
-    this.rules = rules;
-    this.initial = initial;
-  }
-  process(
-    head: SequenceData<T>,
-    existingData: Array<SequenceData<any>>,
-    newData: Array<SequenceData<any>>
-  ): ProcessResult<T> {
-    const result: ProcessResult<T> = {
-      head: head,
-      pastEvents: new Array<SequenceData<any>>(),
-      newEvents: new Array<SequenceData<any>>(),
-    };
-    // Initialize the head if required.
-    if (result.head.data == null) {
-      result.head.data = this.initial();
-    }
-    const rules = this.rules;
-    let latestSeq = result.head.seq + newData.length;
-    const allData = [...existingData, ...newData];
-    allData.forEach((curr, idx) => {
-      const updater = rules.get(curr.typeName);
-      if (updater) {
-        result.head.data = updater({
-          head: result.head.data,
-          headSeq: result.head.seq,
-          current: curr.data,
-          currentSeq: curr.seq,
-          all: allData,
-          index: idx,
-          publish: (eventName: string, event: any) => {
-            const ed = new SequenceData(latestSeq, eventName, event);
-            curr.seq > head.seq
-              ? result.newEvents.push(ed)
-              : result.pastEvents.push(ed);
-            latestSeq++;
-          },
-        } as HeadUpdaterInput<T, any>);
-      }
-    });
-    result.head.seq = latestSeq;
-    return result;
   }
 }
 
