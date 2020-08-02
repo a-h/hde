@@ -7,6 +7,7 @@ import {
   GetOutput,
   Data,
   HeadUpdaterInput,
+  Processor,
 } from ".";
 import {
   Record,
@@ -55,7 +56,8 @@ describe("facet", () => {
     it("returns null when the db returns null", async () => {
       const db = new MockDB();
       const emptyRules = new Map<RecordName, HeadUpdater<any, RecordType>>();
-      const facet = new Facet<any>(db, "name", emptyRules);
+      const processor = new Processor<any>(emptyRules);
+      const facet = new Facet<any>("name", db, processor);
 
       const head = await facet.get("abc");
 
@@ -72,7 +74,8 @@ describe("facet", () => {
       const db = new MockDB();
       db.getHead = async () => expectedRecord;
       const emptyRules = new Map<RecordName, HeadUpdater<any, RecordType>>();
-      const facet = new Facet<TestHead>(db, "name", emptyRules);
+      const processor = new Processor<any>(emptyRules);
+      const facet = new Facet<any>("name", db, processor);
 
       const getOutput = await facet.get("abc");
 
@@ -83,7 +86,8 @@ describe("facet", () => {
     it("creates an empty head record on first put if it doesn't exist", async () => {
       const db = new MockDB();
       const emptyRules = new Map<RecordName, HeadUpdater<any, RecordType>>();
-      const facet = new Facet<TestHead>(db, "name", emptyRules);
+      const processor = new Processor<any>(emptyRules);
+      const facet = new Facet<any>("name", db, processor);
       const data: TestData = { data1: "1", data2: "2" };
 
       const putOutput = await facet.recalculate(
@@ -100,7 +104,8 @@ describe("facet", () => {
       const db = new MockDB();
       const initial: TestHead = { a: "empty", b: "empty" };
       const emptyRules = new Map<RecordName, HeadUpdater<any, RecordType>>();
-      const facet = new Facet<TestHead>(db, "name", emptyRules, () => initial);
+      const processor = new Processor<TestHead>(emptyRules, () => initial);
+      const facet = new Facet<any>("name", db, processor);
       const data: TestData = { data1: "1", data2: "2" };
 
       const putOutput = await facet.recalculate(
@@ -118,7 +123,7 @@ describe("facet", () => {
       const initial: TestHead = { a: "0", b: "empty" };
       const concatenateDataValuesToHead = new Map<
         RecordName,
-        HeadUpdater<any, RecordType>
+        HeadUpdater<TestHead, RecordType>
       >();
       concatenateDataValuesToHead.set(
         "TestData",
@@ -127,11 +132,11 @@ describe("facet", () => {
           return input.head;
         }
       );
+      const processor = new Processor<TestHead>(concatenateDataValuesToHead, () => initial);
       const facet = new Facet<TestHead>(
-        db,
         "name",
-        concatenateDataValuesToHead,
-        () => initial
+        db,
+        processor,
       );
       const data1: TestData = { data1: "1", data2: "" };
       const data2: TestData = { data1: "2", data2: "" };
@@ -147,7 +152,7 @@ describe("facet", () => {
       expect(putOutput.id).toEqual("id");
       expect(putOutput.item).toEqual(expected);
       expect(putOutput.events).toHaveLength(0);
-      expect(putOutput.seq).toBe(1);
+      expect(putOutput.seq).toBe(2);
     });
     it("uses the head updater to re-calculate the head record state based on new data", async () => {
       const db = new MockDB();
@@ -165,22 +170,23 @@ describe("facet", () => {
           return input.head;
         }
       );
+      const processor = new Processor<TestHead>(concatenateDataValuesToHead, () => initial);
       const facet = new Facet<TestHead>(
+        "name",
         db,
-        "TestHead",
-        concatenateDataValuesToHead,
-        () => initial
+        processor,
       );
       // Configure the database to already have data1 and data2 present.
+      const now = new Date();
       const currentHead: TestHead = { a: "0_1_2", b: "empty" };
       const data1: TestData = { data1: "1", data2: "" };
       const data2: TestData = { data1: "2", data2: "" };
       const data3: TestData = { data1: "3", data2: "" };
       db.getRecords = async (_id: string): Promise<Array<Record>> =>
         new Array<Record>(
-          newHeadRecord<TestHead>("TestHead", "id", 3, currentHead),
-          newDataRecord<TestData>("TestHead", "id", 2, "TestData", data1),
-          newDataRecord<TestData>("TestHead", "id", 3, "TestData", data2),
+          newHeadRecord<TestHead>("TestHead", "id", 3, currentHead, now),
+          newDataRecord<TestData>("TestHead", "id", 1, "TestData", data1, now),
+          newDataRecord<TestData>("TestHead", "id", 2, "TestData", data2, now),
         );
 
       const expected: TestHead = { a: "0_1_2_3", b: "empty" };

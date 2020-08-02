@@ -32,7 +32,7 @@ export interface HeadUpdaterInput<THead, TCurrent> {
   current: TCurrent;
   currentSeq: number;
   // all allows access to all of the records, new and old.
-  all: Array<DataRecord>;
+  all: Array<SequenceData<any>>;
   // current index within the sorted records.
   index: number;
   // publish an event. This should be idempotent, i.e. only call this if the
@@ -59,10 +59,79 @@ export class Data<T> {
 
 export type RecordName = string;
 export type RecordType = any;
-// EmptyFacet constructs the default value of a facet item. For example, if the facet is a 
+// EmptyFacet constructs the default value of a facet item. For example, if the facet is a
 // bank account, perhaps the starting balance would be zero, and an overdraft of 1000 would
 // be set.
 export type EmptyFacet<T> = () => T;
+
+class SequenceData<T> {
+  seq: number;
+  typeName: string;
+  data: T | null;
+  constructor(seq: number, typeName: string, data: T | null) {
+    this.seq = seq;
+    this.typeName = typeName;
+    this.data = data;
+  }
+}
+
+export interface ProcessResult<T> {
+  head: SequenceData<T>;
+  pastEvents: Array<SequenceData<any>>;
+  newEvents: Array<SequenceData<any>>;
+}
+
+export class Processor<T> {
+  rules: Map<RecordName, HeadUpdater<T, RecordType>>;
+  initial: EmptyFacet<T>;
+  constructor(
+    rules: Map<RecordName, HeadUpdater<T, RecordType>>,
+    initial: EmptyFacet<T> = () => ({} as T)
+  ) {
+    this.rules = rules;
+    this.initial = initial;
+  }
+  process(
+    head: SequenceData<T>,
+    existingData: Array<SequenceData<any>>,
+    newData: Array<SequenceData<any>>
+  ): ProcessResult<T> {
+    const result: ProcessResult<T> = {
+      head: head,
+      pastEvents: new Array<SequenceData<any>>(),
+      newEvents: new Array<SequenceData<any>>(),
+    };
+    // Initialize the head if required.
+    if (result.head.data == null) {
+      result.head.data = this.initial();
+    }
+    const rules = this.rules;
+    let latestSeq = result.head.seq + newData.length;
+    const allData = [...existingData, ...newData];
+    allData.forEach((curr, idx) => {
+      const updater = rules.get(curr.typeName);
+      if (updater) {
+        result.head.data = updater({
+          head: result.head.data,
+          headSeq: result.head.seq,
+          current: curr.data,
+          currentSeq: curr.seq,
+          all: allData,
+          index: idx,
+          publish: (eventName: string, event: any) => {
+            const ed = new SequenceData(latestSeq, eventName, event);
+            curr.seq > head.seq
+              ? result.newEvents.push(ed)
+              : result.pastEvents.push(ed);
+            latestSeq++;
+          },
+        } as HeadUpdaterInput<T, any>);
+      }
+    });
+    result.head.seq = latestSeq;
+    return result;
+  }
+}
 
 // DB is the database access required by Facet<T>. Use EventDB.
 export interface DB {
@@ -70,6 +139,7 @@ export interface DB {
   getRecords(id: string): Promise<Array<Record>>;
   putHead(
     head: HeadRecord,
+    previousSeq: number,
     data: Array<DataRecord>,
     events: Array<EventRecord>
   ): Promise<void>;
@@ -82,8 +152,8 @@ interface RecordsOutput {
   events: Array<EventRecord>;
 }
 
-// A Facet is a type of record stored in a DynamoDB table. It's constructed of a 
-// "head" record that contains a view of the up-to-date item, multiple "data" records 
+// A Facet is a type of record stored in a DynamoDB table. It's constructed of a
+// "head" record that contains a view of the up-to-date item, multiple "data" records
 // (usually events) that result in a changes to the item, and "event" records that
 // are used to send messages asynchronously using DynamoDB Streams. This allows messages
 // to be queued for delivery at the same time as the transaction is comitted, removing
@@ -91,19 +161,12 @@ interface RecordsOutput {
 // was temporarily unavailable).
 export class Facet<T> {
   name: string;
-  rules: Map<RecordName, HeadUpdater<T, RecordType>>;
-  initial: EmptyFacet<T>;
   db: DB;
-  constructor(
-    db: DB,
-    name: string,
-    rules: Map<RecordName, HeadUpdater<T, RecordType>>,
-    initial: EmptyFacet<T> = () => ({} as T)
-  ) {
+  processor: Processor<T>;
+  constructor(name: string, db: DB, processor: Processor<T>) {
     this.name = name;
-    this.rules = rules;
-    this.initial = initial;
     this.db = db;
+    this.processor = processor;
   }
   async get(id: string): Promise<GetOutput<T> | null> {
     const head = await this.db.getHead(id);
@@ -138,73 +201,94 @@ export class Facet<T> {
     result.data = sortData(result.data);
     return result;
   }
-  // append new data to an item. This method executes two database commands, 
+  // append new data to an item. This method executes two database commands,
   // one to retrieve the current head value, and one to put the updated head back.
-  async append(id: string, ...newData: Array<Data<any>>): Promise<ChangeOutput<T>> {
+  async append(
+    id: string,
+    ...newData: Array<Data<any>>
+  ): Promise<ChangeOutput<T>> {
     const headRecord = await this.get(id);
-    const head = headRecord ? headRecord.item : this.initial();
+    const head = headRecord ? headRecord.item : null;
     const seq = headRecord ? headRecord.record._seq : 1;
     return this.appendTo(id, head, seq, ...newData);
   }
   // appendTo appends new data to an item that has already been retrieved from the
   // database. This method executes a single database command to update the head
   // record.
-  async appendTo(id: string, head: T, seq: number, ...newData: Array<Data<any>>) {
+  async appendTo(
+    id: string,
+    head: T | null,
+    seq: number,
+    ...newData: Array<Data<any>>
+  ) {
     return this.calculate(id, head, seq, new Array<DataRecord>(), ...newData);
   }
   // recalculate all the state by reading all previous records in the facet item and
   // processing each data record. This method may execute multiple Query operations
   // and a single put operation.
-  async recalculate(id: string, ...newData: Array<Data<any>>): Promise<ChangeOutput<T>> {
+  async recalculate(
+    id: string,
+    ...newData: Array<Data<any>>
+  ): Promise<ChangeOutput<T>> {
     // Get the records.
     const records = await this.records(id);
     const seq = records.head ? records.head._seq : 0;
-    const head = this.initial();
-    return this.calculate(id, head, seq, records.data, ...newData);
+    return this.calculate(id, null, seq, records.data, ...newData);
   }
   // calculate the head.
-  private async calculate(id: string, head: T, seq: number, currentData: Array<DataRecord>, ...newData: Array<Data<any>>): Promise<ChangeOutput<T>> {
-    const newDataRecords = newData.map((typeNameToData) =>
+  private async calculate(
+    id: string,
+    head: T | null,
+    seq: number,
+    currentData: Array<DataRecord>,
+    ...newData: Array<Data<any>>
+  ): Promise<ChangeOutput<T>> {
+    // Get the records ready for reprocessing.
+    const headSequence = new SequenceData<T>(seq, this.name, head);
+    const existingDataSequence = currentData.map(
+      (d, i): SequenceData<any> =>
+        new SequenceData<any>(i + 1, d._typ, JSON.parse(d._itm))
+    );
+    const newDataSequence = newData.map(
+      (d, i) => new SequenceData(seq + 1 + i, d.typeName, d.data)
+    );
+
+    // Process the data.
+    const processingResult = this.processor.process(
+      headSequence,
+      existingDataSequence,
+      newDataSequence
+    );
+
+    // Create new records.
+    const now = new Date();
+    const hr = newHeadRecord(this.name, id, processingResult.head.seq, processingResult.head.data, now);
+    const newDataRecords = newData.map((d, i) =>
       newDataRecord(
         this.name,
         id,
-        seq + 1,
-        typeNameToData.typeName,
-        typeNameToData.data
+        seq + 1 + i,
+        d.typeName,
+        d.data,
+        now
       )
     );
-    const newEvents = new Array<EventRecord>();
-    const facetName = this.name;
-    const rules = this.rules;
-    const data = [...currentData, ...newDataRecords];
-    data.forEach((curr, idx) => {
-      const updater = rules.get(curr._typ);
-      if (updater) {
-        head = updater({
-          head: head,
-          headSeq: seq,
-          current: JSON.parse(curr._itm),
-          currentSeq: curr._seq,
-          all: data,
-          index: idx,
-          publish: (eventName: string, event: any) =>
-            newEvents.push(
-              newEventRecord(facetName, id, seq+1, eventName, event)
-            ),
-        } as HeadUpdaterInput<T, any>);
-      }
-    });
-    // Write the head transaction back.
+    const newEventRecords = processingResult.newEvents.map((e) =>
+      newEventRecord(this.name, id, e.seq, e.typeName, e.data, now)
+    );
+
+    // Write the new records to the database.
     await this.db.putHead(
-      newHeadRecord(this.name, id, seq+1, head),
+      hr,
+      seq,
       newDataRecords,
-      newEvents
+      newEventRecords
     );
     return {
       id: id,
-      seq: seq+1,
-      item: head,
-      events: newEvents,
+      seq: processingResult.head.seq,
+      item: processingResult.head.data,
+      events: processingResult.newEvents,
     } as ChangeOutput<T>;
   }
 }
@@ -214,9 +298,9 @@ export class Facet<T> {
 const sortData = (data: Array<Record>): Array<Record> =>
   data.sort((a, b) => {
     const bySeq = cmp(a._seq, b._seq);
-    if(bySeq === 0) {
+    if (bySeq === 0) {
       const byTimestamp = cmp(a._ts, b._ts);
-      if(byTimestamp === 0) {
+      if (byTimestamp === 0) {
         return cmp(a._rng, b._rng);
       }
       return byTimestamp;
@@ -224,8 +308,8 @@ const sortData = (data: Array<Record>): Array<Record> =>
     return bySeq;
   });
 
-const cmp = (a: string| number, b: string|number): number => {
-  if(a < b) {
+const cmp = (a: string | number, b: string | number): number => {
+  if (a < b) {
     return -1;
   }
   if (a === b) {

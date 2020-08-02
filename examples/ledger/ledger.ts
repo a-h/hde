@@ -5,6 +5,7 @@ import {
   Data,
   RecordName,
   HeadUpdater,
+  Processor,
 } from "../../src";
 import { EventDB } from "../../src/records";
 
@@ -82,17 +83,19 @@ const demonstrateLedger = async () => {
   );
 
   // New accounts start with a balance of zero.
-  const initalAccount = (): AccountBalance =>
+  const initialAccount = (): AccountBalance =>
     ({
       balance: 0,
     } as AccountBalance);
 
+  // Create the processor that handles events.
+  const processor = new Processor<AccountBalance>(rules, initialAccount);
+
   // Can now create a ledger "Facet" in our DynamoDB table.
   const ledger = new Facet<AccountBalance>(
-    db,
     AccountBalanceRecordName,
-    rules,
-    initalAccount
+    db,
+    processor
   );
 
   // Let's create a new account.

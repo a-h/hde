@@ -35,7 +35,8 @@ const newRecord = <T>(
   seq: number,
   rng: string,
   typeName: string,
-  item: T
+  item: T,
+  time: Date,
 ): Record =>
   ({
     _facet: facet,
@@ -43,8 +44,8 @@ const newRecord = <T>(
     _seq: seq,
     _rng: rng,
     _typ: typeName,
-    _ts: new Date().getTime(),
-    _date: new Date().toISOString(),
+    _ts: time.getTime(),
+    _date: time.toISOString(),
     _itm: JSON.stringify(item),
   } as Record);
 
@@ -56,24 +57,24 @@ export const newHeadRecord = <T>(
   facet: string,
   id: string,
   seq: number,
-  item: T
-): HeadRecord => newRecord(facet, id, seq, "HEAD", facet, item);
+  item: T,
+  time: Date,
+): HeadRecord => newRecord(facet, id, seq, "HEAD", facet, item, time);
 
 export const isHeadRecord = (r: HeadRecord) => r._rng === "HEAD";
 
-const dataRecordRangeKey = (typeName: string) =>
-  `DATA/${typeName}/${new Date().toISOString()}/${Math.round(
-    Math.random() * 1000
-  ).toString(16)}`;
+const dataRecordRangeKey = (typeName: string, seq: number) =>
+  `DATA/${typeName}/${seq}`;
 
 export const newDataRecord = <T>(
   facet: string,
   id: string,
   seq: number,
   typeName: string,
-  item: T
+  item: T,
+  time: Date,
 ): DataRecord =>
-  newRecord(facet, id, seq, dataRecordRangeKey(typeName), typeName, item);
+  newRecord(facet, id, seq, dataRecordRangeKey(typeName, seq), typeName, item, time);
 
 export const isDataRecord = (r: DataRecord) => r._rng.startsWith("DATA");
 
@@ -84,9 +85,10 @@ export const newEventRecord = <T>(
   id: string,
   seq: number,
   typeName: string,
-  item: T
+  item: T,
+  time: Date,
 ): EventRecord =>
-  newRecord(facet, id, seq, eventRecordRangeKey(typeName), typeName, item);
+  newRecord(facet, id, seq, eventRecordRangeKey(typeName), typeName, item, time);
 
 export const isEventRecord = (r: EventRecord) => r._rng.startsWith("EVENT");
 
@@ -106,7 +108,8 @@ const createPut = (
 
 const createPutHead = (
   table: string,
-  r: Record
+  r: Record,
+  previousSeq: number,
 ): DocumentClient.TransactWriteItem => ({
   Put: {
     TableName: table,
@@ -117,7 +120,7 @@ const createPutHead = (
       "#_seq": "_seq",
     },
     ExpressionAttributeValues: {
-      ":_seq": r._seq - 1, // Only write if the sequence is a single increment.
+      ":_seq": previousSeq,
     },
   },
 });
@@ -145,6 +148,7 @@ export class EventDB {
   }
   async putHead(
     head: HeadRecord,
+    previousSeq: number,
     data: Array<DataRecord> = [],
     events: Array<EventRecord> = []
   ) {
@@ -177,7 +181,7 @@ export class EventDB {
     const transactItems = [
       ...data.map((d) => createPut(this.table, d)),
       ...events.map((e) => createPut(this.table, e)),
-      createPutHead(this.table, head),
+      createPutHead(this.table, head, previousSeq),
     ] as DocumentClient.TransactWriteItemList;
     const params = {
       TransactItems: transactItems,
