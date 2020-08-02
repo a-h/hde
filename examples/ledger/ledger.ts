@@ -1,7 +1,12 @@
 import * as AWS from "aws-sdk";
 import { Facet, Data } from "../../src";
 import { EventDB } from "../../src/db";
-import { Processor, RecordTypeName, HeadUpdater, HeadUpdaterInput } from "../../src/processor";
+import {
+  Processor,
+  RecordTypeName,
+  HeadUpdater,
+  HeadUpdaterInput,
+} from "../../src/processor";
 
 // The account Facet has multiple records.
 // Head: The current "AccountBalance".
@@ -144,7 +149,9 @@ const demonstrateLedger = async () => {
 
   // Get the final balance.
   const balance = await ledger.get(accountId);
-  console.log(`Account details: ${JSON.stringify(balance?.item)}`);
+  if (balance) {
+    console.log(`Account details: ${JSON.stringify(balance.item)}`);
+  }
 
   // Verify the final balance by reading all of the transactions and re-calculating.
   const verifiedBalance = await ledger.recalculate(accountId);
