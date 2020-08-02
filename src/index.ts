@@ -133,9 +133,6 @@ export class Facet<T> {
     currentData: Array<DataRecord>,
     ...newData: Array<Data<any>>
   ): Promise<ChangeOutput<T>> {
-    if(newData == null) {
-      newData = new Array<Data<any>>();
-    }
     const existingDataSequence = currentData.map(
       d =>
         new Data<any>(d._typ, JSON.parse(d._itm))
