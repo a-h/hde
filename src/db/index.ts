@@ -63,8 +63,7 @@ export const newHeadRecord = <T>(
 
 export const isHeadRecord = (r: HeadRecord) => r._rng === "HEAD";
 
-const dataRecordRangeKey = (typeName: string, seq: number) =>
-  `DATA/${typeName}/${seq}`;
+const dataRecordRangeKey = (typeName: string, seq: number) => `DATA/${typeName}/${seq}`;
 
 export const newDataRecord = <T>(
   facet: string,
@@ -73,12 +72,12 @@ export const newDataRecord = <T>(
   typeName: string,
   item: T,
   time: Date,
-): DataRecord =>
-  newRecord(facet, id, seq, dataRecordRangeKey(typeName, seq), typeName, item, time);
+): DataRecord => newRecord(facet, id, seq, dataRecordRangeKey(typeName, seq), typeName, item, time);
 
 export const isDataRecord = (r: DataRecord) => r._rng.startsWith("DATA");
 
-const eventRecordRangeKey = (typeName: string, seq: number, index: number) => `EVENT/${typeName}/${seq}/${index}`;
+const eventRecordRangeKey = (typeName: string, seq: number, index: number) =>
+  `EVENT/${typeName}/${seq}/${index}`;
 
 export const newEventRecord = <T>(
   facet: string,
@@ -93,10 +92,7 @@ export const newEventRecord = <T>(
 
 export const isEventRecord = (r: EventRecord) => r._rng.startsWith("EVENT");
 
-const createPut = (
-  table: string,
-  r: Record
-): DocumentClient.TransactWriteItem => ({
+const createPut = (table: string, r: Record): DocumentClient.TransactWriteItem => ({
   Put: {
     TableName: table,
     Item: r,
@@ -151,14 +147,14 @@ export class EventDB {
     head: HeadRecord,
     previousSeq: number,
     data: Array<DataRecord> = [],
-    events: Array<EventRecord> = []
+    events: Array<EventRecord> = [],
   ) {
     if (!isHeadRecord(head)) {
       throw Error("putHead: invalid head record");
     }
     if (!isFacet(this.facet, head)) {
       throw Error(
-        `putHead: head record has mismatched facet. Expected: "${this.facet}", got: "${head._facet}"`
+        `putHead: head record has mismatched facet. Expected: "${this.facet}", got: "${head._facet}"`,
       );
     }
     if (data.some((d) => !isDataRecord(d))) {
@@ -176,7 +172,7 @@ export class EventDB {
     const eventCount = events?.length + data?.length + 1;
     if (eventCount > 25) {
       throw Error(
-        `putHead: cannot exceed maximum DynamoDB transaction count of 25. The transaction attempted to write ${eventCount}.`
+        `putHead: cannot exceed maximum DynamoDB transaction count of 25. The transaction attempted to write ${eventCount}.`,
       );
     }
     const transactItems = [
@@ -206,4 +202,3 @@ export class EventDB {
     return result.Items as Array<Record>;
   }
 }
-

@@ -81,12 +81,12 @@ describe("Processor<T>", () => {
     const previous = new Array<Data<any>>(
       new Data("SAMPLE", new Sample(1)),
       new Data("SAMPLE", new Sample(2)),
-      new Data("SAMPLE", new Sample(3))
+      new Data("SAMPLE", new Sample(3)),
     );
     const next = new Array<Data<any>>(
       new Data("SAMPLE", new Sample(4)),
       new Data("SAMPLE", new Sample(5)),
-      new Data("SAMPLE", new Sample(6))
+      new Data("SAMPLE", new Sample(6)),
     );
     const actual = p.process(head, previous, next);
 
@@ -116,12 +116,12 @@ describe("Processor<T>", () => {
     const previous = new Array<Data<any>>(
       new Data("SAMPLE", new Sample(1)),
       new Data("SAMPLE", new Sample(2)),
-      new Data("SAMPLE", new Sample(3))
+      new Data("SAMPLE", new Sample(3)),
     );
     const next = new Array<Data<any>>(
       new Data("SAMPLE", new Sample(4)),
       new Data("SAMPLE", new Sample(5)),
-      new Data("SAMPLE", new Sample(6))
+      new Data("SAMPLE", new Sample(6)),
     );
     const actual = p.process(head, previous, next);
 

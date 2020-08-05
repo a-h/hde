@@ -69,17 +69,15 @@ const demonstrateLedger = async () => {
     (input: HeadUpdaterInput<AccountBalance, Transaction>): AccountBalance => {
       input.head.balance += input.current.amount;
       return input.head;
-    }
+    },
   );
   rules.set(
     AccountUpdateRecordName,
-    (
-      input: HeadUpdaterInput<AccountBalance, AccountUpdate>
-    ): AccountBalance => {
+    (input: HeadUpdaterInput<AccountBalance, AccountUpdate>): AccountBalance => {
       input.head.ownerFirst = input.current.ownerFirst;
       input.head.ownerLast = input.current.ownerLast;
       return input.head;
-    }
+    },
   );
 
   // New accounts start with a balance of zero.
@@ -92,11 +90,7 @@ const demonstrateLedger = async () => {
   const processor = new Processor<AccountBalance>(rules, initialAccount);
 
   // Can now create a ledger "Facet" in our DynamoDB table.
-  const ledger = new Facet<AccountBalance>(
-    AccountBalanceRecordName,
-    db,
-    processor
-  );
+  const ledger = new Facet<AccountBalance>(AccountBalanceRecordName, db, processor);
 
   // Let's create a new account.
   const accountId = Math.round(Math.random() * 1000000).toString();
@@ -110,7 +104,7 @@ const demonstrateLedger = async () => {
     new Data<AccountUpdate>(AccountUpdateRecordName, {
       ownerFirst: "John",
       ownerLast: "Brown",
-    } as AccountUpdate)
+    } as AccountUpdate),
   );
 
   // Now, let's add a couple of transactions in a single operation.
@@ -123,7 +117,7 @@ const demonstrateLedger = async () => {
     new Data<Transaction>(TransactionRecordName, {
       desc: "Transaction B",
       amount: -300,
-    })
+    }),
   );
 
   // Another separate transaction.
@@ -132,7 +126,7 @@ const demonstrateLedger = async () => {
     new Data<Transaction>(TransactionRecordName, {
       desc: "Transaction C",
       amount: 50,
-    })
+    }),
   );
 
   // If we've just read the HEAD, we can try appending without doing
@@ -145,7 +139,7 @@ const demonstrateLedger = async () => {
     new Data<Transaction>(TransactionRecordName, {
       desc: "Transaction D",
       amount: 25,
-    })
+    }),
   );
 
   // Get the final balance.
@@ -164,7 +158,7 @@ const demonstrateLedger = async () => {
     new Data<Transaction>(TransactionRecordName, {
       desc: "Transaction E",
       amount: 25,
-    })
+    }),
   );
   console.log(`Final balance: ${JSON.stringify(finalBalance.item)}`);
 };

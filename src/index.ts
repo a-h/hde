@@ -32,7 +32,7 @@ export interface DB {
     head: HeadRecord,
     previousSeq: number,
     data: Array<DataRecord>,
-    events: Array<EventRecord>
+    events: Array<EventRecord>,
   ): Promise<void>;
 }
 
@@ -94,10 +94,7 @@ export class Facet<T> {
   }
   // append new data to an item. This method executes two database commands,
   // one to retrieve the current head value, and one to put the updated head back.
-  async append(
-    id: string,
-    ...newData: Array<Data<any>>
-  ): Promise<ChangeOutput<T>> {
+  async append(id: string, ...newData: Array<Data<any>>): Promise<ChangeOutput<T>> {
     const headRecord = await this.get(id);
     const head = headRecord ? headRecord.item : null;
     const seq = headRecord ? headRecord.record._seq : 1;
@@ -106,21 +103,13 @@ export class Facet<T> {
   // appendTo appends new data to an item that has already been retrieved from the
   // database. This method executes a single database command to update the head
   // record.
-  async appendTo(
-    id: string,
-    head: T | null,
-    seq: number,
-    ...newData: Array<Data<any>>
-  ) {
+  async appendTo(id: string, head: T | null, seq: number, ...newData: Array<Data<any>>) {
     return this.calculate(id, head, seq, new Array<DataRecord>(), ...newData);
   }
   // recalculate all the state by reading all previous records in the facet item and
   // processing each data record. This method may execute multiple Query operations
   // and a single put operation.
-  async recalculate(
-    id: string,
-    ...newData: Array<Data<any>>
-  ): Promise<ChangeOutput<T>> {
+  async recalculate(id: string, ...newData: Array<Data<any>>): Promise<ChangeOutput<T>> {
     // Get the records.
     const records = await this.records(id);
     const seq = records.head ? records.head._seq : 0;
@@ -134,40 +123,20 @@ export class Facet<T> {
     currentData: Array<DataRecord>,
     ...newData: Array<Data<any>>
   ): Promise<ChangeOutput<T>> {
-    const existingDataSequence = currentData.map(
-      (d) => new Data<any>(d._typ, JSON.parse(d._itm))
-    );
+    const existingDataSequence = currentData.map((d) => new Data<any>(d._typ, JSON.parse(d._itm)));
     const newDataSequence = newData.map((d) => new Data(d.typeName, d.data));
 
     // Process the data.
-    const processingResult = this.processor.process(
-      head,
-      existingDataSequence,
-      newDataSequence
-    );
+    const processingResult = this.processor.process(head, existingDataSequence, newDataSequence);
 
     // Create new records.
     const now = new Date();
-    const hr = newHeadRecord(
-      this.name,
-      id,
-      seq + newData.length,
-      processingResult.head,
-      now
-    );
+    const hr = newHeadRecord(this.name, id, seq + newData.length, processingResult.head, now);
     const newDataRecords = newData.map((d, i) =>
-      newDataRecord(this.name, id, seq + 1 + i, d.typeName, d.data, now)
+      newDataRecord(this.name, id, seq + 1 + i, d.typeName, d.data, now),
     );
     const newEventRecords = processingResult.newEvents.map((e, i) =>
-      newEventRecord(
-        this.name,
-        id,
-        seq + newData.length,
-        i,
-        e.typeName,
-        e.data,
-        now
-      )
+      newEventRecord(this.name, id, seq + newData.length, i, e.typeName, e.data, now),
     );
 
     // Write the new records to the database.

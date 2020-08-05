@@ -1,7 +1,5 @@
 // HeadUpdater<THead, TCurrent> defines a function used to update head based on the current type.
-export type HeadUpdater<THead, TCurrent> = (
-  input: HeadUpdaterInput<THead, TCurrent>
-) => THead;
+export type HeadUpdater<THead, TCurrent> = (input: HeadUpdaterInput<THead, TCurrent>) => THead;
 
 // HeadUpdaterInput is the input to the HeadUpdater function.
 export interface HeadUpdaterInput<THead, TCurrent> {
@@ -56,7 +54,7 @@ export class Processor<T> {
   initial: Initializer<T>;
   constructor(
     rules: Map<RecordTypeName, HeadUpdater<T, RecordType>>,
-    initial: Initializer<T> = () => ({} as T)
+    initial: Initializer<T> = () => ({} as T),
   ) {
     this.rules = rules;
     this.initial = initial;
@@ -64,7 +62,7 @@ export class Processor<T> {
   process(
     head: T | null,
     existingData: Array<Data<any>> = new Array<Data<any>>(),
-    newData: Array<Data<any>> = new Array<Data<any>>()
+    newData: Array<Data<any>> = new Array<Data<any>>(),
   ): ProcessResult<T> {
     const allData = [...existingData, ...newData];
     const result: ProcessResult<T> = {
@@ -86,9 +84,7 @@ export class Processor<T> {
           headIndex: existingData.length,
           publish: (eventName: string, event: any) => {
             const ed = new Data(eventName, event);
-            idx >= existingData.length
-              ? result.newEvents.push(ed)
-              : result.pastEvents.push(ed);
+            idx >= existingData.length ? result.newEvents.push(ed) : result.pastEvents.push(ed);
           },
         });
       }
