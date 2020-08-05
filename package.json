@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "test": "npx jest",
-    "cover": "npx jest --collect-coverage"
+    "coverage": "npx jest --collect-coverage",
+    "dynamodb": "docker run --rm -p 8000:8000 -v $(pwd)/dbstore:/dbstore amazon/dynamodb-local -jar DynamoDBLocal.jar -sharedDb -dbPath /dbstore"
   },
   "keywords": [
     "dynamodb",

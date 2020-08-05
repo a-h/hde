@@ -78,17 +78,18 @@ export const newDataRecord = <T>(
 
 export const isDataRecord = (r: DataRecord) => r._rng.startsWith("DATA");
 
-const eventRecordRangeKey = (typeName: string) => `EVENT/${typeName}`;
+const eventRecordRangeKey = (typeName: string, seq: number, index: number) => `EVENT/${typeName}/${seq}/${index}`;
 
 export const newEventRecord = <T>(
   facet: string,
   id: string,
   seq: number,
+  index: number,
   typeName: string,
   item: T,
   time: Date,
 ): EventRecord =>
-  newRecord(facet, id, seq, eventRecordRangeKey(typeName), typeName, item, time);
+  newRecord(facet, id, seq, eventRecordRangeKey(typeName, seq, index), typeName, item, time);
 
 export const isEventRecord = (r: EventRecord) => r._rng.startsWith("EVENT");
 
@@ -167,7 +168,7 @@ export class EventDB {
       throw Error("putHead: invalid facet for data record");
     }
     if (events.some((e) => !isEventRecord(e))) {
-      throw Error("putHead: invalid events record");
+      throw Error("putHead: invalid event record");
     }
     if (events.some((e) => !isFacet(this.facet, e))) {
       throw Error("putHead: invalid facet for event record");
@@ -203,26 +204,6 @@ export class EventDB {
     } as DocumentClient.QueryInput;
     const result = await this.client.query(params).promise();
     return result.Items as Array<Record>;
-  }
-  async putRecord(r: Record) {
-    if (!isFacet(this.facet, r)) {
-      throw Error("putRecord: invalid facet");
-    }
-    const params = {
-      TableName: this.table,
-      Item: r,
-    } as DocumentClient.PutItemInput;
-    await this.client.put(params).promise();
-  }
-  // putData puts data into the table. This is only suitable for adding data that doesn't affect the state of the
-  // facet's HEAD record.
-  async putData(r: DataRecord) {
-    await this.putRecord(r);
-  }
-  // putEvent puts an event into the table. This is only suitable for adding events that don't affect the state of
-  // the facet's HEAD record.
-  async putEvent(r: EventRecord) {
-    await this.putRecord(r);
   }
 }
 

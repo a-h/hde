@@ -20,7 +20,8 @@ export interface GetOutput<T> {
 export interface ChangeOutput<T> {
   seq: number;
   item: T;
-  events: Array<any>;
+  pastEvents: Array<any>;
+  newEvents: Array<any>;
 }
 
 // DB is the database access required by Facet<T>. Use EventDB.
@@ -134,12 +135,9 @@ export class Facet<T> {
     ...newData: Array<Data<any>>
   ): Promise<ChangeOutput<T>> {
     const existingDataSequence = currentData.map(
-      d =>
-        new Data<any>(d._typ, JSON.parse(d._itm))
+      (d) => new Data<any>(d._typ, JSON.parse(d._itm))
     );
-    const newDataSequence = newData.map(
-      d => new Data(d.typeName, d.data)
-    );
+    const newDataSequence = newData.map((d) => new Data(d.typeName, d.data));
 
     // Process the data.
     const processingResult = this.processor.process(
@@ -160,8 +158,16 @@ export class Facet<T> {
     const newDataRecords = newData.map((d, i) =>
       newDataRecord(this.name, id, seq + 1 + i, d.typeName, d.data, now)
     );
-    const newEventRecords = processingResult.newEvents.map((e) =>
-      newEventRecord(this.name, id, seq + newData.length, e.typeName, e.data, now)
+    const newEventRecords = processingResult.newEvents.map((e, i) =>
+      newEventRecord(
+        this.name,
+        id,
+        seq + newData.length,
+        i,
+        e.typeName,
+        e.data,
+        now
+      )
     );
 
     // Write the new records to the database.
@@ -169,7 +175,8 @@ export class Facet<T> {
     return {
       seq: hr._seq,
       item: processingResult.head,
-      events: processingResult.newEvents,
+      pastEvents: processingResult.pastEvents.map((e) => e.data),
+      newEvents: processingResult.newEvents.map((e) => e.data),
     } as ChangeOutput<T>;
   }
 }
