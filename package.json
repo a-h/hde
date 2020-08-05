@@ -1,11 +1,12 @@
 {
-  "name": "esd",
-  "version": "1.0.0",
+  "name": "hde",
+  "version": "0.0.1",
   "description": "Events in DynamoDB.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
+    "prepublish": "tsc",
     "test": "npx jest",
     "coverage": "npx jest --collect-coverage",
     "dynamodb": "docker run --rm -p 8000:8000 -v $(pwd)/dbstore:/dbstore amazon/dynamodb-local -jar DynamoDBLocal.jar -sharedDb -dbPath /dbstore"

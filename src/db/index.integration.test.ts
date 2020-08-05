@@ -143,7 +143,7 @@ describe("EventDB", () => {
     });
     it("validates that only 25 records can be posted at once", async () => {
       const db = new EventDB({} as DocumentClient, "fakeName", "facetName");
-      const dataRecords = [...Array(26).keys()].map((i) =>
+      const dataRecords = Array.from(new Array(26), (i) =>
         newDataRecord("facetName", "id", i, "typeName", {}, new Date()),
       );
       try {
