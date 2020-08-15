@@ -1,53 +1,52 @@
 import { Facet, DB, GetOutput, ChangeOutput } from ".";
 import {
   RecordTypeName,
-  HeadUpdater,
+  StateUpdater,
   RecordType,
-  HeadUpdaterInput,
+  StateUpdaterInput,
   Processor,
-  Data,
+  Event,
 } from "./processor";
 import {
   Record,
-  HeadRecord,
-  DataRecord,
-  EventRecord,
-  newHeadRecord,
-  newDataRecord,
-  newEventRecord,
+  StateRecord,
+  InboundRecord,
+  OutboundRecord,
+  newStateRecord,
+  newInboundRecord,
+  newOutboundRecord,
 } from "./db";
-import { Records } from "aws-sdk/clients/rdsdataservice";
 
-type GetHead = (id: string) => Promise<Record>;
+type GetState = (id: string) => Promise<Record>;
 type GetRecords = (id: string) => Promise<Array<Record>>;
 type PutHead = (
-  head: HeadRecord,
+  item: StateRecord,
   previousSeq: number,
-  data: Array<DataRecord>,
-  events: Array<EventRecord>,
+  newInboundEvents: Array<InboundRecord>,
+  newOutboundEvents: Array<OutboundRecord>,
 ) => Promise<void>;
 
 class MockDB implements DB {
-  getHead: GetHead;
+  getState: GetState;
   getRecords: GetRecords;
-  putHead: PutHead;
+  putState: PutHead;
   constructor(
-    getHead: GetHead = jest.fn(),
+    getState: GetState = jest.fn(),
     getRecords: GetRecords = jest.fn(),
-    putHead: PutHead = jest.fn(),
+    putState: PutHead = jest.fn(),
   ) {
-    this.getHead = getHead;
+    this.getState = getState;
     this.getRecords = getRecords;
-    this.putHead = putHead;
+    this.putState = putState;
   }
 }
 
-interface TestHead {
+interface TestItem {
   a: string;
   b: string;
 }
 
-interface TestData {
+interface TestEvent {
   data1: string;
   data2: string;
 }
@@ -56,25 +55,25 @@ describe("facet", () => {
   describe("get", () => {
     it("returns null when the db returns null", async () => {
       const db = new MockDB();
-      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
+      const emptyRules = new Map<RecordTypeName, StateUpdater<any, RecordType>>();
       const processor = new Processor<any>(emptyRules);
       const facet = new Facet<any>("name", db, processor);
 
-      const head = await facet.get("abc");
+      const state = await facet.get("abc");
 
-      expect(head).toBeNull();
+      expect(state).toBeNull();
     });
     it("returns the _itm when the db returns a record", async () => {
-      const expectedHead: TestHead = { a: "a", b: "b" };
-      const expectedRecord = { _itm: JSON.stringify(expectedHead) } as Record;
+      const expectedState: TestItem = { a: "a", b: "b" };
+      const expectedRecord = { _itm: JSON.stringify(expectedState) } as Record;
 
-      const expected: GetOutput<TestHead> = {
+      const expected: GetOutput<TestItem> = {
         record: expectedRecord,
-        item: expectedHead,
+        item: expectedState,
       };
       const db = new MockDB();
-      db.getHead = async () => expectedRecord;
-      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
+      db.getState = async () => expectedRecord;
+      const emptyRules = new Map<RecordTypeName, StateUpdater<any, RecordType>>();
       const processor = new Processor<any>(emptyRules);
       const facet = new Facet<any>("name", db, processor);
 
@@ -94,10 +93,10 @@ describe("facet", () => {
       const event22 = {
         name: "event2.2",
       };
-      const initial: TestHead = { a: "0", b: "empty" };
+      const initial: TestItem = { a: "0", b: "empty" };
       const db = new MockDB();
-      db.putHead = async (head, _previousSeq, _data, events) => {
-        expect(head._itm).toEqual(JSON.stringify(initial));
+      db.putState = async (state, _previousSeq, _data, events) => {
+        expect(state._itm).toEqual(JSON.stringify(initial));
         expect(events.length).toBe(3);
         expect(events[0]._typ).toEqual("eventName1");
         expect(events[0]._itm).toBe(JSON.stringify(event1));
@@ -108,195 +107,195 @@ describe("facet", () => {
       };
 
       // Create the rules.
-      const publishEvent = new Map<RecordTypeName, HeadUpdater<TestHead, RecordType>>();
+      const publishEvent = new Map<RecordTypeName, StateUpdater<TestItem, RecordType>>();
       publishEvent.set("Record1", (input) => {
         input.publish("eventName1", event1);
-        return input.head;
+        return input.state;
       });
       publishEvent.set("Record2", (input) => {
         input.publish("eventName2.1", event21);
         input.publish("eventName2.2", event22);
-        return input.head;
+        return input.state;
       });
 
-      const processor = new Processor<TestHead>(publishEvent, () => initial);
+      const processor = new Processor<TestItem>(publishEvent, () => initial);
 
-      const facet = new Facet<TestHead>("name", db, processor);
-      await facet.append("id", new Data("Record1", {}), new Data("Record2", {}));
+      const facet = new Facet<TestItem>("name", db, processor);
+      await facet.append("id", new Event("Record1", {}), new Event("Record2", {}));
     });
-    it("uses defaults if no head record exists", async () => {
-      const initial: TestHead = { a: "0", b: "empty" };
+    it("uses defaults if no state record exists", async () => {
+      const initial: TestItem = { a: "0", b: "empty" };
       const db = new MockDB();
       // Don't return any records.
       db.getRecords = async (_id: string): Promise<Array<Record>> => [];
 
       // Create empty rules.
-      const publishEvent = new Map<RecordTypeName, HeadUpdater<TestHead, RecordType>>();
-      const processor = new Processor<TestHead>(publishEvent, () => initial);
+      const publishEvent = new Map<RecordTypeName, StateUpdater<TestItem, RecordType>>();
+      const processor = new Processor<TestItem>(publishEvent, () => initial);
 
-      const facet = new Facet<TestHead>("name", db, processor);
-      facet.appendTo = async (id, head, seq): Promise<ChangeOutput<TestHead>> => {
+      const facet = new Facet<TestItem>("name", db, processor);
+      facet.appendTo = async (id, state, seq): Promise<ChangeOutput<TestItem>> => {
         expect(id).toEqual("id");
-        expect(head).toBe(null);
+        expect(state).toBe(null);
         expect(seq).toEqual(1);
         return {
           seq: 1,
           item: {},
-        } as ChangeOutput<TestHead>;
+        } as ChangeOutput<TestItem>;
       };
       await facet.append("id");
     });
-    it("uses the head record if it exists", async () => {
-      const initial: TestHead = { a: "0", b: "empty" };
+    it("uses the state record if it exists", async () => {
+      const initial: TestItem = { a: "0", b: "empty" };
       const db = new MockDB();
-      const expectedHead: TestHead = { a: "expected", b: "value" };
-      // Return a head record.
-      db.getHead = async (id: string): Promise<Record> =>
-        newHeadRecord("name", id, 1, expectedHead, new Date());
+      const expectedState: TestItem = { a: "expected", b: "value" };
+      // Return a state record.
+      db.getState = async (id: string): Promise<Record> =>
+        newStateRecord("name", id, 1, expectedState, new Date());
 
       // Create empty rules.
-      const publishEvent = new Map<RecordTypeName, HeadUpdater<TestHead, RecordType>>();
-      const processor = new Processor<TestHead>(publishEvent, () => initial);
+      const publishEvent = new Map<RecordTypeName, StateUpdater<TestItem, RecordType>>();
+      const processor = new Processor<TestItem>(publishEvent, () => initial);
 
-      const facet = new Facet<TestHead>("name", db, processor);
-      facet.appendTo = async (id, head, seq): Promise<ChangeOutput<TestHead>> => {
+      const facet = new Facet<TestItem>("name", db, processor);
+      facet.appendTo = async (id, state, seq): Promise<ChangeOutput<TestItem>> => {
         expect(id).toEqual("id");
-        expect(head).toEqual(expectedHead);
+        expect(state).toEqual(expectedState);
         expect(seq).toEqual(1);
         return {
           seq: 1,
           item: {},
-        } as ChangeOutput<TestHead>;
+        } as ChangeOutput<TestItem>;
       };
       await facet.append("id");
     });
   });
   describe("recalculate", () => {
-    it("creates an empty head record on first put if it doesn't exist", async () => {
+    it("creates an empty state record on first put if it doesn't exist", async () => {
       const db = new MockDB();
-      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
+      const emptyRules = new Map<RecordTypeName, StateUpdater<any, RecordType>>();
       const processor = new Processor<any>(emptyRules);
       const facet = new Facet<any>("name", db, processor);
-      const data: TestData = { data1: "1", data2: "2" };
+      const event: TestEvent = { data1: "1", data2: "2" };
 
-      const putOutput = await facet.recalculate("id", new Data<TestData>("TestData", data));
+      const putOutput = await facet.recalculate("id", new Event<TestEvent>("TestEvent", event));
 
       expect(putOutput.item).toEqual({});
-      expect(putOutput.newEvents).toHaveLength(0);
+      expect(putOutput.newOutboundEvents).toHaveLength(0);
       expect(putOutput.seq).toBe(1);
     });
-    it("creates an initial head record on first put if it doesn't exist", async () => {
+    it("creates an initial state record on first put if it doesn't exist", async () => {
       const db = new MockDB();
-      const initial: TestHead = { a: "empty", b: "empty" };
-      const emptyRules = new Map<RecordTypeName, HeadUpdater<any, RecordType>>();
-      const processor = new Processor<TestHead>(emptyRules, () => initial);
+      const initial: TestItem = { a: "empty", b: "empty" };
+      const emptyRules = new Map<RecordTypeName, StateUpdater<any, RecordType>>();
+      const processor = new Processor<TestItem>(emptyRules, () => initial);
       const facet = new Facet<any>("name", db, processor);
-      const data: TestData = { data1: "1", data2: "2" };
+      const event: TestEvent = { data1: "1", data2: "2" };
 
-      const putOutput = await facet.recalculate("id", new Data<TestData>("TestData", data));
+      const putOutput = await facet.recalculate("id", new Event<TestEvent>("TestEvent", event));
 
       expect(putOutput.item).toEqual(initial);
-      expect(putOutput.newEvents).toHaveLength(0);
+      expect(putOutput.newOutboundEvents).toHaveLength(0);
       expect(putOutput.seq).toBe(1);
     });
-    it("uses the head updater to calculate the head record state based on initial data", async () => {
+    it("uses the state updater to calculate the state record state based on initial events", async () => {
       const db = new MockDB();
-      const initial: TestHead = { a: "0", b: "empty" };
-      const concatenateDataValuesToHead = new Map<
+      const initial: TestItem = { a: "0", b: "empty" };
+      const concatenateEventValuesToHead = new Map<
         RecordTypeName,
-        HeadUpdater<TestHead, RecordType>
+        StateUpdater<TestItem, RecordType>
       >();
-      concatenateDataValuesToHead.set(
-        "TestData",
-        (input: HeadUpdaterInput<TestHead, TestData>): TestHead => {
-          input.head.a = `${input.head.a}_${input.current.data1}`;
-          return input.head;
+      concatenateEventValuesToHead.set(
+        "TestEvent",
+        (input: StateUpdaterInput<TestItem, TestEvent>): TestItem => {
+          input.state.a = `${input.state.a}_${input.current.data1}`;
+          return input.state;
         },
       );
-      const processor = new Processor<TestHead>(concatenateDataValuesToHead, () => initial);
-      const facet = new Facet<TestHead>("name", db, processor);
-      const data1: TestData = { data1: "1", data2: "" };
-      const data2: TestData = { data1: "2", data2: "" };
+      const processor = new Processor<TestItem>(concatenateEventValuesToHead, () => initial);
+      const facet = new Facet<TestItem>("name", db, processor);
+      const e1: TestEvent = { data1: "1", data2: "" };
+      const e2: TestEvent = { data1: "2", data2: "" };
 
       const putOutput = await facet.recalculate(
         "id",
-        new Data<TestData>("TestData", data1),
-        new Data<TestData>("TestData", data2),
+        new Event<TestEvent>("TestEvent", e1),
+        new Event<TestEvent>("TestEvent", e2),
       );
 
-      const expected: TestHead = { a: "0_1_2", b: "empty" };
+      const expected: TestItem = { a: "0_1_2", b: "empty" };
 
       expect(putOutput.item).toEqual(expected);
-      expect(putOutput.newEvents).toHaveLength(0);
+      expect(putOutput.newOutboundEvents).toHaveLength(0);
       expect(putOutput.seq).toBe(2);
     });
-    it("uses the head updater to re-calculate the head record state based on new data", async () => {
+    it("uses the state updater to re-calculate the state record state based on new events", async () => {
       const db = new MockDB();
-      const initial: TestHead = { a: "0", b: "empty" };
+      const initial: TestItem = { a: "0", b: "empty" };
 
       // Create the rules.
-      const concatenateDataValuesToHead = new Map<
+      const concatenateEventValuesToHead = new Map<
         RecordTypeName,
-        HeadUpdater<TestHead, RecordType>
+        StateUpdater<TestItem, RecordType>
       >();
-      concatenateDataValuesToHead.set(
-        "TestData",
-        (input: HeadUpdaterInput<TestHead, TestData>): TestHead => {
-          input.head.a = `${input.head.a}_${input.current.data1}`;
-          return input.head;
+      concatenateEventValuesToHead.set(
+        "TestEvent",
+        (input: StateUpdaterInput<TestItem, TestEvent>): TestItem => {
+          input.state.a = `${input.state.a}_${input.current.data1}`;
+          return input.state;
         },
       );
-      const processor = new Processor<TestHead>(concatenateDataValuesToHead, () => initial);
-      const facet = new Facet<TestHead>("name", db, processor);
-      // Configure the database to already have data1 and data2 present.
+      const processor = new Processor<TestItem>(concatenateEventValuesToHead, () => initial);
+      const facet = new Facet<TestItem>("name", db, processor);
+      // Configure the database to already have e1 and e2 present.
       const now = new Date();
-      const currentHead: TestHead = { a: "0_1_2", b: "empty" };
-      const data1: TestData = { data1: "1", data2: "" };
-      const data2: TestData = { data1: "2", data2: "" };
-      const data3: TestData = { data1: "3", data2: "" };
+      const currentHead: TestItem = { a: "0_1_2", b: "empty" };
+      const e1: TestEvent = { data1: "1", data2: "" };
+      const e2: TestEvent = { data1: "2", data2: "" };
+      const e3: TestEvent = { data1: "3", data2: "" };
       db.getRecords = async (_id: string): Promise<Array<Record>> =>
         new Array<Record>(
-          newHeadRecord<TestHead>("TestHead", "id", 3, currentHead, now),
-          newDataRecord<TestData>("TestHead", "id", 1, "TestData", data1, now),
-          newDataRecord<TestData>("TestHead", "id", 2, "TestData", data2, now),
+          newStateRecord<TestItem>("TestItem", "id", 3, currentHead, now),
+          newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", e1, now),
+          newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", e2, now),
         );
 
-      const expected: TestHead = { a: "0_1_2_3", b: "empty" };
-      const putOutput = await facet.recalculate("id", new Data<TestData>("TestData", data3));
+      const expected: TestItem = { a: "0_1_2_3", b: "empty" };
+      const putOutput = await facet.recalculate("id", new Event<TestEvent>("TestEvent", e3));
 
       expect(putOutput.item).toEqual(expected);
-      expect(putOutput.newEvents).toHaveLength(0);
+      expect(putOutput.newOutboundEvents).toHaveLength(0);
       expect(putOutput.seq).toBe(4);
     });
     it("ignores unkown record types in the calculation", async () => {
       const db = new MockDB();
-      const initial: TestHead = { a: "0", b: "empty" };
+      const initial: TestItem = { a: "0", b: "empty" };
 
       // Create the rules.
-      const concatenateDataValuesToHead = new Map<
+      const concatenateEventValuesToHead = new Map<
         RecordTypeName,
-        HeadUpdater<TestHead, RecordType>
+        StateUpdater<TestItem, RecordType>
       >();
-      concatenateDataValuesToHead.set(
-        "TestData",
-        (input: HeadUpdaterInput<TestHead, TestData>): TestHead => {
-          input.head.a = `${input.head.a}_${input.current.data1}`;
-          return input.head;
+      concatenateEventValuesToHead.set(
+        "TestEvent",
+        (input: StateUpdaterInput<TestItem, TestEvent>): TestItem => {
+          input.state.a = `${input.state.a}_${input.current.data1}`;
+          return input.state;
         },
       );
-      const processor = new Processor<TestHead>(concatenateDataValuesToHead, () => initial);
-      const facet = new Facet<TestHead>("name", db, processor);
-      // Configure the database to already have data1 and data2 present.
+      const processor = new Processor<TestItem>(concatenateEventValuesToHead, () => initial);
+      const facet = new Facet<TestItem>("name", db, processor);
+      // Configure the database to already have e1 and e2 present.
       const now = new Date();
-      const currentHead: TestHead = { a: "0_1_2", b: "empty" };
-      const data1: TestData = { data1: "1", data2: "" };
-      const data2: TestData = { data1: "2", data2: "" };
-      const data3: TestData = { data1: "3", data2: "" };
+      const currentHead: TestItem = { a: "0_1_2", b: "empty" };
+      const e1: TestEvent = { data1: "1", data2: "" };
+      const e2: TestEvent = { data1: "2", data2: "" };
+      const e3: TestEvent = { data1: "3", data2: "" };
       db.getRecords = async (_id: string): Promise<Array<Record>> =>
         new Array<Record>(
-          newHeadRecord<TestHead>("TestHead", "id", 3, currentHead, now),
-          newDataRecord<TestData>("TestHead", "id", 1, "TestData", data1, now),
-          newDataRecord<TestData>("TestHead", "id", 2, "TestData", data2, now),
+          newStateRecord<TestItem>("TestItem", "id", 3, currentHead, now),
+          newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", e1, now),
+          newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", e2, now),
           {
             _id: "unknown id",
             _seq: 4,
@@ -304,87 +303,87 @@ describe("facet", () => {
           } as Record,
         );
 
-      const expected: TestHead = { a: "0_1_2_3", b: "empty" };
-      const putOutput = await facet.recalculate("id", new Data<TestData>("TestData", data3));
+      const expected: TestItem = { a: "0_1_2_3", b: "empty" };
+      const putOutput = await facet.recalculate("id", new Event<TestEvent>("TestEvent", e3));
 
       expect(putOutput.item).toEqual(expected);
-      expect(putOutput.newEvents).toHaveLength(0);
+      expect(putOutput.newOutboundEvents).toHaveLength(0);
       expect(putOutput.seq).toBe(4);
     });
     it("returns a list of historical and new events", async () => {
       const db = new MockDB();
-      const initial: TestHead = { a: "0", b: "empty" };
+      const initial: TestItem = { a: "0", b: "empty" };
 
       // Create the rules.
-      const rules = new Map<RecordTypeName, HeadUpdater<TestHead, RecordType>>();
+      const rules = new Map<RecordTypeName, StateUpdater<TestItem, RecordType>>();
       rules.set(
-        "TestData",
-        (input: HeadUpdaterInput<TestHead, TestData>): TestHead => {
+        "TestEvent",
+        (input: StateUpdaterInput<TestItem, TestEvent>): TestItem => {
           input.publish("eventName", { payload: input.current });
-          return input.head;
+          return input.state;
         },
       );
-      const processor = new Processor<TestHead>(rules, () => initial);
-      const facet = new Facet<TestHead>("name", db, processor);
+      const processor = new Processor<TestItem>(rules, () => initial);
+      const facet = new Facet<TestItem>("name", db, processor);
       // Configure the database to already have data1 and data2 present.
       const now = new Date();
-      const currentHead: TestHead = { a: "0_1_2", b: "empty" };
-      const data1: TestData = { data1: "1", data2: "" };
-      const data2: TestData = { data1: "2", data2: "" };
-      const data3: TestData = { data1: "3", data2: "" };
+      const currentHead: TestItem = { a: "0_1_2", b: "empty" };
+      const e1: TestEvent = { data1: "1", data2: "" };
+      const e2: TestEvent = { data1: "2", data2: "" };
+      const e3: TestEvent = { data1: "3", data2: "" };
       // These events are in the database, but the rules don't cover them.
       // This means that they get ignored.
       const event1 = { eventName: "event1" };
       const event2 = { eventName: "event2" };
       db.getRecords = async (_id: string): Promise<Array<Record>> =>
         new Array<Record>(
-          newDataRecord<TestData>("TestHead", "id", 1, "TestData", data1, now),
-          newDataRecord<TestData>("TestHead", "id", 2, "TestData", data2, now),
-          newEventRecord("TestHead", "id", 3, 0, "TestEvent", event1, now),
-          newEventRecord("TestHead", "id", 4, 1, "TestEvent", event2, now),
-          newHeadRecord<TestHead>("TestHead", "id", 5, currentHead, now),
+          newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", e1, now),
+          newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", e2, now),
+          newOutboundRecord("TestItem", "id", 3, 0, "OldEvent", event1, now),
+          newOutboundRecord("TestItem", "id", 4, 1, "OldEvent", event2, now),
+          newStateRecord<TestItem>("TestItem", "id", 5, currentHead, now),
         );
 
-      const putOutput = await facet.recalculate("id", new Data<TestData>("TestData", data3));
+      const putOutput = await facet.recalculate("id", new Event<TestEvent>("TestEvent", e3));
 
-      // We get two old events (one raised by data1, one raised by data2).
-      expect(putOutput.pastEvents).toHaveLength(2);
-      expect(putOutput.pastEvents[0]).toEqual({ payload: data1 });
-      expect(putOutput.pastEvents[1]).toEqual({ payload: data2 });
-      // We get a new even too, raised by the new record data3.
-      expect(putOutput.newEvents).toHaveLength(1);
-      expect(putOutput.newEvents[0]).toEqual({ payload: data3 });
+      // We get two old events (one raised by e1, one raised by e2).
+      expect(putOutput.pastOutboundEvents).toHaveLength(2);
+      expect(putOutput.pastOutboundEvents[0]).toEqual({ type: "eventName", event: { payload: e1 } });
+      expect(putOutput.pastOutboundEvents[1]).toEqual({ type: "eventName", event: { payload: e2 } });
+      // We get a new event too, raised by the new e3.
+      expect(putOutput.newOutboundEvents).toHaveLength(1);
+      expect(putOutput.newOutboundEvents[0]).toEqual({ type: "eventName", event: { payload: e3 } });
     });
     it("sorts data after it's returned by the database", async () => {
       const db = new MockDB();
-      const initial: TestHead = { a: "0", b: "empty" };
+      const initial: TestItem = { a: "0", b: "empty" };
 
       // Create the rules.
-      const rules = new Map<RecordTypeName, HeadUpdater<TestHead, RecordType>>();
+      const rules = new Map<RecordTypeName, StateUpdater<TestItem, RecordType>>();
       const received = new Array<string>();
       rules.set(
-        "TestData",
-        (input: HeadUpdaterInput<TestHead, TestData>): TestHead => {
+        "TestEvent",
+        (input: StateUpdaterInput<TestItem, TestEvent>): TestItem => {
           received.push(input.current.data1);
-          return input.head;
+          return input.state;
         },
       );
-      const processor = new Processor<TestHead>(rules, () => initial);
-      const facet = new Facet<TestHead>("name", db, processor);
+      const processor = new Processor<TestItem>(rules, () => initial);
+      const facet = new Facet<TestItem>("name", db, processor);
       // Configure the database to already have data1 and data2 present.
       const now = new Date();
-      const data1: TestData = { data1: "1", data2: "" };
-      const data2: TestData = { data1: "2", data2: "" };
-      const data3: TestData = { data1: "3", data2: "" };
-      const data4: TestData = { data1: "4", data2: "" };
+      const data1: TestEvent = { data1: "1", data2: "" };
+      const data2: TestEvent = { data1: "2", data2: "" };
+      const data3: TestEvent = { data1: "3", data2: "" };
+      const data4: TestEvent = { data1: "4", data2: "" };
 
       // Return data incorrectly sorted.
       db.getRecords = async (_id: string): Promise<Array<Record>> =>
         new Array<Record>(
-          newDataRecord<TestData>("TestHead", "id", 2, "TestData", data2, now),
-          newDataRecord<TestData>("TestHead", "id", 1, "TestData", data1, now),
-          newDataRecord<TestData>("TestHead", "id", 3, "TestData", data3, now),
-          newDataRecord<TestData>("TestHead", "id", 3, "TestData", data4, now),
+          newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", data2, now),
+          newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", data1, now),
+          newInboundRecord<TestEvent>("TestItem", "id", 3, "TestEvent", data3, now),
+          newInboundRecord<TestEvent>("TestItem", "id", 3, "TestEvent", data4, now),
         );
 
       const putOutput = await facet.recalculate("id");

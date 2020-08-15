@@ -1,16 +1,16 @@
 import {
   Record,
-  HeadRecord,
-  DataRecord,
-  EventRecord,
-  isDataRecord,
-  isEventRecord,
-  isHeadRecord,
-  newDataRecord,
-  newHeadRecord,
-  newEventRecord,
+  StateRecord,
+  InboundRecord,
+  OutboundRecord,
+  isStateRecord,
+  isInboundRecord,
+  isOutboundRecord,
+  newStateRecord,
+  newInboundRecord,
+  newOutboundRecord,
 } from "./db";
-import { Processor, Data } from "./processor";
+import { Processor, Event } from "./processor";
 
 export interface GetOutput<T> {
   record: Record;
@@ -20,32 +20,32 @@ export interface GetOutput<T> {
 export interface ChangeOutput<T> {
   seq: number;
   item: T;
-  pastEvents: Array<any>;
-  newEvents: Array<any>;
+  pastOutboundEvents: Array<Event<any>>;
+  newOutboundEvents: Array<Event<any>>;
 }
 
 // DB is the database access required by Facet<T>. Use EventDB.
 export interface DB {
-  getHead(id: string): Promise<Record>;
+  getState(id: string): Promise<Record>;
   getRecords(id: string): Promise<Array<Record>>;
-  putHead(
-    head: HeadRecord,
+  putState(
+    state: StateRecord,
     previousSeq: number,
-    data: Array<DataRecord>,
-    events: Array<EventRecord>,
+    newInboundEvents: Array<InboundRecord>,
+    newOutboundEvents: Array<OutboundRecord>,
   ): Promise<void>;
 }
 
 // recordsOutput is the return type of the records method.
 interface RecordsOutput {
-  head: HeadRecord | null;
-  data: Array<DataRecord>;
-  events: Array<EventRecord>;
+  state: StateRecord | null;
+  inboundEvents: Array<InboundRecord>;
+  outboundEvents: Array<OutboundRecord>;
 }
 
 // A Facet is a type of record stored in a DynamoDB table. It's constructed of a
-// "head" record that contains a view of the up-to-date item, multiple "data" records
-// (usually events) that result in a changes to the item, and "event" records that
+// "state" record that contains a view of the up-to-date item, multiple inbound
+// event records that result in a changes to the item, and outbound event records that
 // are used to send messages asynchronously using DynamoDB Streams. This allows messages
 // to be queued for delivery at the same time as the transaction is comitted, removing
 // the risk of an item being updated, but a message not being sent (e.g. because SQS
@@ -60,99 +60,105 @@ export class Facet<T> {
     this.processor = processor;
   }
   async get(id: string): Promise<GetOutput<T> | null> {
-    const head = await this.db.getHead(id);
-    return head
+    const state = await this.db.getState(id);
+    return state
       ? ({
-          record: head,
-          item: JSON.parse(head._itm) as T,
+          record: state,
+          item: JSON.parse(state._itm) as T,
         } as GetOutput<T>)
       : null;
   }
   private async records(id: string): Promise<RecordsOutput> {
     const records = await this.db.getRecords(id);
     const result = {
-      data: new Array<DataRecord>(),
-      events: new Array<EventRecord>(),
+      inboundEvents: new Array<InboundRecord>(),
+      outboundEvents: new Array<OutboundRecord>(),
     } as RecordsOutput;
     if (records) {
       records.forEach((r) => {
-        if (isDataRecord(r)) {
-          result.data.push(r);
+        if (isInboundRecord(r)) {
+          result.inboundEvents.push(r);
           return;
         }
-        if (isEventRecord(r)) {
-          result.events.push(r);
+        if (isOutboundRecord(r)) {
+          result.outboundEvents.push(r);
           return;
         }
-        if (isHeadRecord(r)) {
-          result.head = r as HeadRecord;
+        if (isStateRecord(r)) {
+          result.state = r as StateRecord;
         }
       });
     }
-    result.data = sortData(result.data);
+    result.inboundEvents = sortRecords(result.inboundEvents);
     return result;
   }
-  // append new data to an item. This method executes two database commands,
-  // one to retrieve the current head value, and one to put the updated head back.
-  async append(id: string, ...newData: Array<Data<any>>): Promise<ChangeOutput<T>> {
-    const headRecord = await this.get(id);
-    const head = headRecord ? headRecord.item : null;
-    const seq = headRecord ? headRecord.record._seq : 1;
-    return this.appendTo(id, head, seq, ...newData);
+  // append new event(s) to an item. This method executes two database commands,
+  // one to retrieve the current state value, and one to put the updated state back.
+  async append(id: string, ...newInboundEvents: Array<Event<any>>): Promise<ChangeOutput<T>> {
+    const stateRecord = await this.get(id);
+    const state = stateRecord ? stateRecord.item : null;
+    const seq = stateRecord ? stateRecord.record._seq : 1;
+    return this.appendTo(id, state, seq, ...newInboundEvents);
   }
-  // appendTo appends new data to an item that has already been retrieved from the
-  // database. This method executes a single database command to update the head
+  // appendTo appends new events to an item that has already been retrieved from the
+  // database. This method executes a single database command to update the state
   // record.
-  async appendTo(id: string, head: T | null, seq: number, ...newData: Array<Data<any>>) {
-    return this.calculate(id, head, seq, new Array<DataRecord>(), ...newData);
+  async appendTo(id: string, state: T | null, seq: number, ...newInboundEvents: Array<Event<any>>) {
+    return this.calculate(id, state, seq, new Array<InboundRecord>(), ...newInboundEvents);
   }
   // recalculate all the state by reading all previous records in the facet item and
-  // processing each data record. This method may execute multiple Query operations
+  // processing each inbound event record. This method may execute multiple Query operations
   // and a single put operation.
-  async recalculate(id: string, ...newData: Array<Data<any>>): Promise<ChangeOutput<T>> {
+  async recalculate(id: string, ...newInboundEvents: Array<Event<any>>): Promise<ChangeOutput<T>> {
     // Get the records.
     const records = await this.records(id);
-    const seq = records.head ? records.head._seq : 0;
-    return this.calculate(id, null, seq, records.data, ...newData);
+    const seq = records.state ? records.state._seq : 0;
+    return this.calculate(id, null, seq, records.inboundEvents, ...newInboundEvents);
   }
-  // calculate the head.
+  // calculate the state.
   private async calculate(
     id: string,
-    head: T | null,
+    state: T | null,
     seq: number,
-    currentData: Array<DataRecord>,
-    ...newData: Array<Data<any>>
+    pastInboundEvents: Array<InboundRecord>,
+    ...newInboundEvents: Array<Event<any>>
   ): Promise<ChangeOutput<T>> {
-    const existingDataSequence = currentData.map((d) => new Data<any>(d._typ, JSON.parse(d._itm)));
-    const newDataSequence = newData.map((d) => new Data(d.typeName, d.data));
+    const pastEvents = pastInboundEvents.map((e) => new Event<any>(e._typ, JSON.parse(e._itm)));
+    const newInboundEventsSequence = newInboundEvents.map((e) => new Event(e.type, e.event));
 
-    // Process the data.
-    const processingResult = this.processor.process(head, existingDataSequence, newDataSequence);
+    // Process the events.
+    const processingResult = this.processor.process(state, pastEvents, newInboundEventsSequence);
 
     // Create new records.
     const now = new Date();
-    const hr = newHeadRecord(this.name, id, seq + newData.length, processingResult.head, now);
-    const newDataRecords = newData.map((d, i) =>
-      newDataRecord(this.name, id, seq + 1 + i, d.typeName, d.data, now),
+    const hr = newStateRecord(
+      this.name,
+      id,
+      seq + newInboundEvents.length,
+      processingResult.state,
+      now,
     );
-    const newEventRecords = processingResult.newEvents.map((e, i) =>
-      newEventRecord(this.name, id, seq + newData.length, i, e.typeName, e.data, now),
+    const newInboundRecords = newInboundEvents.map((e, i) =>
+      newInboundRecord(this.name, id, seq + 1 + i, e.type, e.event, now),
+    );
+    const newOutboundRecords = processingResult.newOutboundEvents.map((e, i) =>
+      newOutboundRecord(this.name, id, seq + newInboundEvents.length, i, e.type, e.event, now),
     );
 
     // Write the new records to the database.
-    await this.db.putHead(hr, seq, newDataRecords, newEventRecords);
+    await this.db.putState(hr, seq, newInboundRecords, newOutboundRecords);
     return {
       seq: hr._seq,
-      item: processingResult.head,
-      pastEvents: processingResult.pastEvents.map((e) => e.data),
-      newEvents: processingResult.newEvents.map((e) => e.data),
+      item: processingResult.state,
+      pastOutboundEvents: processingResult.pastOutboundEvents,
+      newOutboundEvents: processingResult.newOutboundEvents,
     } as ChangeOutput<T>;
   }
 }
 
-// sortData sorts data records by their sequence number ascending.
-const sortData = (data: Array<Record>): Array<Record> =>
-  data.sort((a, b) => {
+// sortRecords sorts event records by their sequence number ascending.
+const sortRecords = (eventRecords: Array<Record>): Array<Record> =>
+  eventRecords.sort((a, b) => {
     if (a._seq < b._seq) {
       return -1;
     }

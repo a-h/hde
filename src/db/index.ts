@@ -20,12 +20,12 @@ export interface Record {
   _seq: number;
 }
 
-// A HeadRecord represents the current state of an item.
-export interface HeadRecord extends Record {}
-// DataRecords represent all of the events assocated with an item.
-export interface DataRecord extends Record {}
-// EventRecords are the events send to external systems due to item changes.
-export interface EventRecord extends Record {}
+// A StateRecord represents the current state of an item.
+export interface StateRecord extends Record {}
+// InboundRecords represent all of the change events assocated with an item.
+export interface InboundRecord extends Record {}
+// OutboundRecords are the events sent to external systems due to item changes.
+export interface OutboundRecord extends Record {}
 
 const facetId = (facet: string, id: string) => `${facet}/${id}`;
 
@@ -34,7 +34,7 @@ const newRecord = <T>(
   id: string,
   seq: number,
   rng: string,
-  typeName: string,
+  type: string,
   item: T,
   time: Date,
 ): Record =>
@@ -43,7 +43,7 @@ const newRecord = <T>(
     _id: facetId(facet, id),
     _seq: seq,
     _rng: rng,
-    _typ: typeName,
+    _typ: type,
     _ts: time.getTime(),
     _date: time.toISOString(),
     _itm: JSON.stringify(item),
@@ -51,46 +51,46 @@ const newRecord = <T>(
 
 const isFacet = (facet: string, r: Record) => r._facet === facet;
 
-// Create a new head record to represent the state of an item.
+// Create a new state record to represent the state of an item.
 // facet: the name of the DynamoDB facet.
-export const newHeadRecord = <T>(
+export const newStateRecord = <T>(
   facet: string,
   id: string,
   seq: number,
   item: T,
   time: Date,
-): HeadRecord => newRecord(facet, id, seq, "HEAD", facet, item, time);
+): StateRecord => newRecord(facet, id, seq, "STATE", facet, item, time);
 
-export const isHeadRecord = (r: HeadRecord) => r._rng === "HEAD";
+export const isStateRecord = (r: StateRecord) => r._rng === "STATE";
 
-const dataRecordRangeKey = (typeName: string, seq: number) => `DATA/${typeName}/${seq}`;
+const inboundRecordRangeKey = (type: string, seq: number) => `INBOUND/${type}/${seq}`;
 
-export const newDataRecord = <T>(
+export const newInboundRecord = <T>(
   facet: string,
   id: string,
   seq: number,
-  typeName: string,
+  type: string,
   item: T,
   time: Date,
-): DataRecord => newRecord(facet, id, seq, dataRecordRangeKey(typeName, seq), typeName, item, time);
+): InboundRecord => newRecord(facet, id, seq, inboundRecordRangeKey(type, seq), type, item, time);
 
-export const isDataRecord = (r: DataRecord) => r._rng.startsWith("DATA");
+export const isInboundRecord = (r: InboundRecord) => r._rng.startsWith("INBOUND");
 
-const eventRecordRangeKey = (typeName: string, seq: number, index: number) =>
-  `EVENT/${typeName}/${seq}/${index}`;
+const outboundRecordRangeKey = (type: string, seq: number, index: number) =>
+  `OUTBOUND/${type}/${seq}/${index}`;
 
-export const newEventRecord = <T>(
+export const newOutboundRecord = <T>(
   facet: string,
   id: string,
   seq: number,
   index: number,
-  typeName: string,
+  type: string,
   item: T,
   time: Date,
-): EventRecord =>
-  newRecord(facet, id, seq, eventRecordRangeKey(typeName, seq, index), typeName, item, time);
+): OutboundRecord =>
+  newRecord(facet, id, seq, outboundRecordRangeKey(type, seq, index), type, item, time);
 
-export const isEventRecord = (r: EventRecord) => r._rng.startsWith("EVENT");
+export const isOutboundRecord = (r: OutboundRecord) => r._rng.startsWith("OUTBOUND");
 
 const createPut = (table: string, r: Record): DocumentClient.TransactWriteItem => ({
   Put: {
@@ -103,7 +103,7 @@ const createPut = (table: string, r: Record): DocumentClient.TransactWriteItem =
   },
 });
 
-const createPutHead = (
+const createPutState = (
   table: string,
   r: Record,
   previousSeq: number,
@@ -131,54 +131,54 @@ export class EventDB {
     this.table = table;
     this.facet = facet;
   }
-  async getHead(id: string): Promise<Record> {
+  async getState(id: string): Promise<Record> {
     const params = {
       TableName: this.table,
       Key: {
         _id: facetId(this.facet, id),
-        _rng: "HEAD",
+        _rng: "STATE",
       },
       ConsistentRead: true,
     } as DocumentClient.GetItemInput;
     const result = await this.client.get(params).promise();
     return result.Item as Record;
   }
-  async putHead(
-    head: HeadRecord,
+  async putState(
+    state: StateRecord,
     previousSeq: number,
-    data: Array<DataRecord> = [],
-    events: Array<EventRecord> = [],
+    inbound: Array<InboundRecord> = [],
+    outbound: Array<OutboundRecord> = [],
   ) {
-    if (!isHeadRecord(head)) {
-      throw Error("putHead: invalid head record");
+    if (!isStateRecord(state)) {
+      throw Error("putState: invalid state record");
     }
-    if (!isFacet(this.facet, head)) {
+    if (!isFacet(this.facet, state)) {
       throw Error(
-        `putHead: head record has mismatched facet. Expected: "${this.facet}", got: "${head._facet}"`,
+        `putState: state record has mismatched facet. Expected: "${this.facet}", got: "${state._facet}"`,
       );
     }
-    if (data.some((d) => !isDataRecord(d))) {
-      throw Error("putHead: invalid data record");
+    if (inbound.some((d) => !isInboundRecord(d))) {
+      throw Error("putState: invalid inbound record");
     }
-    if (data.some((d) => !isFacet(this.facet, d))) {
-      throw Error("putHead: invalid facet for data record");
+    if (inbound.some((d) => !isFacet(this.facet, d))) {
+      throw Error("putState: invalid facet for inbound record");
     }
-    if (events.some((e) => !isEventRecord(e))) {
-      throw Error("putHead: invalid event record");
+    if (outbound.some((e) => !isOutboundRecord(e))) {
+      throw Error("putState: invalid outbound record");
     }
-    if (events.some((e) => !isFacet(this.facet, e))) {
-      throw Error("putHead: invalid facet for event record");
+    if (outbound.some((e) => !isFacet(this.facet, e))) {
+      throw Error("putState: invalid facet for outbound record");
     }
-    const eventCount = events?.length + data?.length + 1;
-    if (eventCount > 25) {
+    const outboundCount = outbound?.length + inbound?.length + 1;
+    if (outboundCount > 25) {
       throw Error(
-        `putHead: cannot exceed maximum DynamoDB transaction count of 25. The transaction attempted to write ${eventCount}.`,
+        `putState: cannot exceed maximum DynamoDB transaction count of 25. The transaction attempted to write ${outboundCount}.`,
       );
     }
     const transactItems = [
-      ...data.map((d) => createPut(this.table, d)),
-      ...events.map((e) => createPut(this.table, e)),
-      createPutHead(this.table, head, previousSeq),
+      ...inbound.map((d) => createPut(this.table, d)),
+      ...outbound.map((e) => createPut(this.table, e)),
+      createPutState(this.table, state, previousSeq),
     ] as DocumentClient.TransactWriteItemList;
     const params = {
       TransactItems: transactItems,

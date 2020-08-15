@@ -1,34 +1,35 @@
-// HeadUpdater<THead, TCurrent> defines a function used to update head based on the current type.
-export type HeadUpdater<THead, TCurrent> = (input: HeadUpdaterInput<THead, TCurrent>) => THead;
+// StateUpdater<TState, TCurrent> defines a function used to update the state given the current incoming event.
+export type StateUpdater<TState, TCurrent> = (input: StateUpdaterInput<TState, TCurrent>) => TState;
 
-// HeadUpdaterInput is the input to the HeadUpdater function.
-export interface HeadUpdaterInput<THead, TCurrent> {
-  // head value of the facet.
-  head: THead;
-  // current data that is modifying the head.
+// StateUpdaterInput is the input to the StateUpdater function.
+export interface StateUpdaterInput<TState, TCurrent> {
+  // state of the facet.
+  state: TState;
+  // current event that is modifying the state.
   current: TCurrent;
-  // data that already exists.
-  existingData: Array<Data<any>>;
-  // data that is being added.
-  newData: Array<Data<any>>;
-  // all allows access to all of the data, new and old.
-  all: Array<Data<any>>;
-  // current index within the data.
+  // events that already exist.
+  pastInboundEvents: Array<Event<any>>;
+  // events that are being added.
+  newInboundEvents: Array<Event<any>>;
+  // all allows access to all of the events, new and old.
+  all: Array<Event<any>>;
+  // current index within the events.
   currentIndex: number;
-  // The index of the latest datad within all data.
-  headIndex: number;
-  // publish an event.
+  // The index of the latest event within all events.
+  stateIndex: number;
+  // publish an outbound event.
   publish: (name: string, event: any) => void;
 }
 
-// Data is data that makes up the facet item. Reading through all the data, and applying the rules creates
-// a materialised view. This view is the "HEAD" record stored in the database.
-export class Data<T> {
-  typeName: string;
-  data: T | null;
-  constructor(typeName: string, data: T | null) {
-    this.typeName = typeName;
-    this.data = data;
+// An Event can be an inbound event that makes up the facet state, or an outbound event emitted
+// due to a state change. Reading through all the inbound events, and applying the rules creates
+// a materialised view. This view is the "STATE" record stored in the database.
+export class Event<T> {
+  type: string;
+  event: T | null;
+  constructor(type: string, event: T | null) {
+    this.type = type;
+    this.event = event;
   }
 }
 
@@ -43,48 +44,48 @@ export type RecordType = any;
 export type Initializer<T> = () => T;
 
 export interface ProcessResult<T> {
-  head: T;
-  pastEvents: Array<Data<any>>;
-  newEvents: Array<Data<any>>;
+  state: T;
+  pastOutboundEvents: Array<Event<any>>;
+  newOutboundEvents: Array<Event<any>>;
 }
 
-// A Processor processes events and updates the state of the head record.
+// A Processor processes events and updates the state of the state record.
 export class Processor<T> {
-  rules: Map<RecordTypeName, HeadUpdater<T, RecordType>>;
+  rules: Map<RecordTypeName, StateUpdater<T, RecordType>>;
   initial: Initializer<T>;
   constructor(
-    rules: Map<RecordTypeName, HeadUpdater<T, RecordType>>,
+    rules: Map<RecordTypeName, StateUpdater<T, RecordType>>,
     initial: Initializer<T> = () => ({} as T),
   ) {
     this.rules = rules;
     this.initial = initial;
   }
   process(
-    head: T | null,
-    existingData: Array<Data<any>> = new Array<Data<any>>(),
-    newData: Array<Data<any>> = new Array<Data<any>>(),
+    state: T | null,
+    pastInboundEvents: Array<Event<any>> = new Array<Event<any>>(),
+    newInboundEvents: Array<Event<any>> = new Array<Event<any>>(),
   ): ProcessResult<T> {
-    const allData = [...existingData, ...newData];
     const result: ProcessResult<T> = {
-      head: head || this.initial(),
-      pastEvents: new Array<Data<any>>(),
-      newEvents: new Array<Data<any>>(),
+      state: state || this.initial(),
+      pastOutboundEvents: new Array<Event<any>>(),
+      newOutboundEvents: new Array<Event<any>>(),
     };
+    const allEvents = [...pastInboundEvents, ...newInboundEvents];
     const rules = this.rules;
-    allData.forEach((curr, idx) => {
-      const updater = rules.get(curr.typeName);
+    allEvents.forEach((curr, idx) => {
+      const updater = rules.get(curr.type);
       if (updater) {
-        result.head = updater({
-          head: result.head,
-          existingData: existingData,
-          newData: newData,
-          current: curr.data,
+        result.state = updater({
+          state: result.state,
+          pastInboundEvents: pastInboundEvents,
+          newInboundEvents: newInboundEvents,
+          current: curr.event,
           currentIndex: idx,
-          all: allData,
-          headIndex: existingData.length,
+          all: allEvents,
+          stateIndex: pastInboundEvents.length,
           publish: (eventName: string, event: any) => {
-            const ed = new Data(eventName, event);
-            idx >= existingData.length ? result.newEvents.push(ed) : result.pastEvents.push(ed);
+            const ed = new Event(eventName, event);
+            idx >= pastInboundEvents.length ? result.newOutboundEvents.push(ed) : result.pastOutboundEvents.push(ed);
           },
         });
       }

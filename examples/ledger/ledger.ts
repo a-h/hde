@@ -4,25 +4,30 @@ import { EventDB } from "../../src/db";
 import {
   Processor,
   RecordTypeName,
-  HeadUpdater,
-  HeadUpdaterInput,
-  Data,
+  StateUpdater,
+  StateUpdaterInput,
+  Event,
 } from "../../src/processor";
 
 // The account Facet has multiple records.
-// Head: The current "AccountBalance".
-// Data: The account is made up of "Transaction" and "AccountUpdate" records.
-// Events: An "AccountOverdrawn" event is emitted when the balance becomes < 0, and this is allowed due to an overdraft.
-// Events: A "TransactionFailed" event is emitted when a transaction cannot be completed, due to insufficient funds.
-interface AccountBalance {
+// State: The current "BankAccount".
+// Inbound Events: The account is made up of "Transaction" and "AccountUpdate" records.
+// Outbound Event 1: An "AccountOverdrawn" event is emitted when the balance becomes < 0, and this is allowed due to an overdraft.
+// Outbound Event 2: A "TransactionFailed" event is emitted when a transaction cannot be completed, due to insufficient funds.
+interface BankAccount {
   id: string;
   ownerFirst: string;
   ownerLast: string;
   balance: number;
+  minimumBalance: number;
 }
-const AccountBalanceRecordName = "ACCOUNT_BALANCE";
+const BankAccountRecordName = "BANK_ACCOUNT";
 
-// Data events must have a name.
+// Inbound events must have a name.
+interface AccountCreation {
+  id: string;
+}
+const AccountCreationRecordName = "ACCOUNT_CREATION";
 interface AccountUpdate {
   ownerFirst: string;
   ownerLast: string;
@@ -32,16 +37,14 @@ interface Transaction {
   desc: string;
   amount: number;
 }
-const TransactionRecordName = "TRANSACTION";
+const TransactionRecordName = "TRANSACTION_ACCEPTED";
 
-// These events are not named.
+// Outbound events don't need to be named, they're named when they're sent, so it's still a good
+// idea to set the name.
 interface AccountOverdrawn {
   accountId: string;
 }
-interface TransactionFailed {
-  accountId: string;
-  transaction: Transaction;
-}
+const AccountOverdrawnEventName = "accountOverdrawn";
 
 const demonstrateLedger = async () => {
   // Create a table.
@@ -54,89 +57,117 @@ const demonstrateLedger = async () => {
     region: "eu-west-2",
   });
   const tableName = "ledger";
-  const db = new EventDB(client, tableName, AccountBalanceRecordName);
+  const db = new EventDB(client, tableName, BankAccountRecordName);
 
-  // The rules define how the AccountBalance is updated by incoming Data events.
-  // For example, and incoming "TRANSACTION" record modifies the "ACCOUNT_BALANCE" record.
+  // The rules define how the BankAccount state is updated by incoming events.
+  // For example, an incoming "TRANSACTION" event modifies the "ACCOUNT_BALANCE" state.
   // The function must be pure, it must not carry out IO (e.g. network requests, or disk
   // access), and it should execute quickly. If it does not, it is more likely that in
-  // between the transaction starting (reading all the records), and completing (updating
-  // the head), another record will have been inserted, resulting in the transaction
+  // between the transaction starting (reading all the previous events), and completing (updating
+  // the state), another event will have been inserted, resulting in the transaction
   // failing and needing to be executed again.
-  const rules = new Map<RecordTypeName, HeadUpdater<AccountBalance, any>>();
+  const rules = new Map<RecordTypeName, StateUpdater<BankAccount, any>>();
+  rules.set(
+    AccountCreationRecordName,
+    (input: StateUpdaterInput<BankAccount, AccountCreation>): BankAccount => {
+      input.state.id = input.current.id;
+      return input.state;
+    },
+  );
   rules.set(
     TransactionRecordName,
-    (input: HeadUpdaterInput<AccountBalance, Transaction>): AccountBalance => {
-      input.head.balance += input.current.amount;
-      return input.head;
+    (input: StateUpdaterInput<BankAccount, Transaction>): BankAccount => {
+      const previousBalance = input.state.balance;
+      const newBalance = input.state.balance + input.current.amount;
+
+      // If they don't have sufficient overdraft, cancel the transaction.
+      if (newBalance < input.state.minimumBalance) {
+        throw new Error("insufficient funds");
+      }
+
+      // If this is the transaction that takes the user overdrawn, notify them.
+      if (previousBalance >= 0 && newBalance < 0) {
+        const overdrawnEvent = { accountId: input.state.id } as AccountOverdrawn;
+        input.publish(AccountOverdrawnEventName, overdrawnEvent);
+      }
+
+      input.state.balance = newBalance;
+      return input.state;
     },
   );
   rules.set(
     AccountUpdateRecordName,
-    (input: HeadUpdaterInput<AccountBalance, AccountUpdate>): AccountBalance => {
-      input.head.ownerFirst = input.current.ownerFirst;
-      input.head.ownerLast = input.current.ownerLast;
-      return input.head;
+    (input: StateUpdaterInput<BankAccount, AccountUpdate>): BankAccount => {
+      input.state.ownerFirst = input.current.ownerFirst;
+      input.state.ownerLast = input.current.ownerLast;
+      return input.state;
     },
   );
 
   // New accounts start with a balance of zero.
-  const initialAccount = (): AccountBalance =>
+  const initialAccount = (): BankAccount =>
     ({
       balance: 0,
-    } as AccountBalance);
+      minimumBalance: -1000, // Give the user an overdraft.
+    } as BankAccount);
 
   // Create the processor that handles events.
-  const processor = new Processor<AccountBalance>(rules, initialAccount);
+  const processor = new Processor<BankAccount>(rules, initialAccount);
 
   // Can now create a ledger "Facet" in our DynamoDB table.
-  const ledger = new Facet<AccountBalance>(AccountBalanceRecordName, db, processor);
+  const ledger = new Facet<BankAccount>(BankAccountRecordName, db, processor);
 
   // Let's create a new account.
   const accountId = Math.round(Math.random() * 1000000).toString();
 
   // There is no new data to add.
-  await ledger.append(accountId);
+  await ledger.append(
+    accountId,
+    new Event<AccountCreation>(AccountCreationRecordName, {
+      id: accountId,
+    }),
+  );
 
   // Update the name of the owner.
   await ledger.append(
     accountId,
-    new Data<AccountUpdate>(AccountUpdateRecordName, {
+    new Event<AccountUpdate>(AccountUpdateRecordName, {
       ownerFirst: "John",
       ownerLast: "Brown",
-    } as AccountUpdate),
+    }),
   );
 
   // Now, let's add a couple of transactions in a single operation.
-  await ledger.append(
+  const result = await ledger.append(
     accountId,
-    new Data<Transaction>(TransactionRecordName, {
+    new Event<Transaction>(TransactionRecordName, {
       desc: "Transaction A",
       amount: 200,
     }),
-    new Data<Transaction>(TransactionRecordName, {
+    new Event<Transaction>(TransactionRecordName, {
       desc: "Transaction B",
       amount: -300,
     }),
   );
+  result.newOutboundEvents.map((e) => console.log(`Published event: ${JSON.stringify(e)}`));
 
   // Another separate transaction.
   const transactionCResult = await ledger.append(
     accountId,
-    new Data<Transaction>(TransactionRecordName, {
+    new Event<Transaction>(TransactionRecordName, {
       desc: "Transaction C",
       amount: 50,
     }),
   );
 
-  // If we've just read the HEAD, we can try appending without doing
+  // If we've just read the STATE, we can try appending without doing
   // another database read. If no other records have been written in the
   // meantime, the transaction will succeed.
   await ledger.appendTo(
     accountId,
     transactionCResult.item,
     transactionCResult.seq,
-    new Data<Transaction>(TransactionRecordName, {
+    new Event<Transaction>(TransactionRecordName, {
       desc: "Transaction D",
       amount: 25,
     }),
@@ -155,7 +186,7 @@ const demonstrateLedger = async () => {
   // The re-calculation can also take data to modify the result.
   const finalBalance = await ledger.recalculate(
     accountId,
-    new Data<Transaction>(TransactionRecordName, {
+    new Event<Transaction>(TransactionRecordName, {
       desc: "Transaction E",
       amount: 25,
     }),

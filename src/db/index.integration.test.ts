@@ -1,156 +1,156 @@
 import { DocumentClient } from "aws-sdk/clients/dynamodb";
 import { DynamoDB } from "aws-sdk";
-import { EventDB, newHeadRecord, newDataRecord, DataRecord, newEventRecord } from ".";
+import { EventDB, newStateRecord, newInboundRecord, newOutboundRecord } from ".";
 
 describe("EventDB", () => {
-  describe("getHead", () => {
-    it("can get the head record if it exists", async () => {
+  describe("getState", () => {
+    it("can get the state record if it exists", async () => {
       const testDB = await createLocalTable();
       try {
         const db = new EventDB(testDB.client, testDB.name, "facetName");
-        const head = { key: "value" };
-        const headRecord = newHeadRecord<any>("facetName", "idValue", 1, head, new Date());
-        await db.putHead(headRecord, 0);
+        const state = { key: "value" };
+        const stateRecord = newStateRecord<any>("facetName", "idValue", 1, state, new Date());
+        await db.putState(stateRecord, 0);
 
-        const actual = await db.getHead("idValue");
-        expect(actual).toEqual(headRecord);
+        const actual = await db.getState("idValue");
+        expect(actual).toEqual(stateRecord);
       } finally {
         await testDB.delete();
       }
     });
   });
-  describe("putHead", () => {
-    it("can put a new head record", async () => {
+  describe("putState", () => {
+    it("can put a new state record", async () => {
       const testDB = await createLocalTable();
       try {
         const db = new EventDB(testDB.client, testDB.name, "facetName");
-        const head1 = { key: "value1" };
-        const headRecord1 = newHeadRecord<any>("facetName", "idValue", 1, head1, new Date());
-        await db.putHead(headRecord1, 0);
-        const head2 = { key: "value2" };
-        const headRecord2 = newHeadRecord<any>("facetName", "idValue", 2, head2, new Date());
-        await db.putHead(headRecord2, 1);
+        const state1 = { key: "value1" };
+        const stateRecord1 = newStateRecord<any>("facetName", "idValue", 1, state1, new Date());
+        await db.putState(stateRecord1, 0);
+        const state2 = { key: "value2" };
+        const stateRecord2 = newStateRecord<any>("facetName", "idValue", 2, state2, new Date());
+        await db.putState(stateRecord2, 1);
 
-        const actual = await db.getHead("idValue");
-        expect(actual).toEqual(headRecord2);
+        const actual = await db.getState("idValue");
+        expect(actual).toEqual(stateRecord2);
       } finally {
         await testDB.delete();
       }
     });
-    it("can put data records alongside a new head record", async () => {
+    it("can put inbound records alongside a new state record", async () => {
       const testDB = await createLocalTable();
       try {
         const db = new EventDB(testDB.client, testDB.name, "facetName");
-        const head = { key: "value1" };
-        const headRecord = newHeadRecord<any>("facetName", "idValue", 3, head, new Date());
-        const dataRecords = [
-          newDataRecord("facetName", "idValue", 1, "data", { record: "data1" }, new Date()),
-          newDataRecord("facetName", "idValue", 2, "data", { record: "data2" }, new Date()),
+        const state = { key: "value1" };
+        const stateRecord = newStateRecord<any>("facetName", "idValue", 3, state, new Date());
+        const inboundRecords = [
+          newInboundRecord("facetName", "idValue", 1, "inbound", { record: "inbound1" }, new Date()),
+          newInboundRecord("facetName", "idValue", 2, "inbound", { record: "inbound2" }, new Date()),
         ];
-        await db.putHead(headRecord, 0, dataRecords);
-
-        const actual = await db.getRecords("idValue");
-        expect(actual).toEqual([...dataRecords, headRecord]);
-      } finally {
-        await testDB.delete();
-      }
-    });
-    it("can put event records alongside a new head record", async () => {
-      const testDB = await createLocalTable();
-      try {
-        const db = new EventDB(testDB.client, testDB.name, "facetName");
-        const head = { key: "value1" };
-        const headRecord = newHeadRecord<any>("facetName", "idValue", 5, head, new Date());
-        const dataRecords = [
-          newDataRecord("facetName", "idValue", 1, "data", { record: "data1" }, new Date()),
-          newDataRecord("facetName", "idValue", 2, "data", { record: "data2" }, new Date()),
-        ];
-        const eventRecords = [
-          newEventRecord("facetName", "idValue", 3, 0, "data", { record: "data1" }, new Date()),
-          newEventRecord("facetName", "idValue", 3, 1, "event", { event: "test1" }, new Date()),
-        ];
-        await db.putHead(headRecord, 0, dataRecords, eventRecords);
+        await db.putState(stateRecord, 0, inboundRecords);
 
         const actual = await db.getRecords("idValue");
-        expect(actual).toEqual([...dataRecords, ...eventRecords, headRecord]);
+        expect(actual).toEqual([...inboundRecords, stateRecord]);
       } finally {
         await testDB.delete();
       }
     });
-    it("validates head records are the right type", async () => {
+    it("can put outbound records alongside a new state record", async () => {
+      const testDB = await createLocalTable();
+      try {
+        const db = new EventDB(testDB.client, testDB.name, "facetName");
+        const state = { key: "value1" };
+        const stateRecord = newStateRecord<any>("facetName", "idValue", 5, state, new Date());
+        const inboundRecords = [
+          newInboundRecord("facetName", "idValue", 1, "inbound", { record: "inbound1" }, new Date()),
+          newInboundRecord("facetName", "idValue", 2, "inbound", { record: "inbound2" }, new Date()),
+        ];
+        const outboundRecords = [
+          newOutboundRecord("facetName", "idValue", 3, 0, "inbound", { record: "inbound1" }, new Date()),
+          newOutboundRecord("facetName", "idValue", 3, 1, "outbound", { outbound: "test1" }, new Date()),
+        ];
+        await db.putState(stateRecord, 0, inboundRecords, outboundRecords);
+
+        const actual = await db.getRecords("idValue");
+        expect(actual).toEqual([...inboundRecords, ...outboundRecords, stateRecord]);
+      } finally {
+        await testDB.delete();
+      }
+    });
+    it("validates state records are the right type", async () => {
       const db = new EventDB({} as DocumentClient, "fakeName", "facetName");
       try {
-        await db.putHead(newEventRecord("not_important", "", 0, 0, "test", {}, new Date()), 0);
+        await db.putState(newOutboundRecord("not_important", "", 0, 0, "test", {}, new Date()), 0);
       } catch (e) {
-        expect(e.message).toBe("putHead: invalid head record");
+        expect(e.message).toBe("putState: invalid state record");
       }
     });
-    it("validates head records are the right facet", async () => {
+    it("validates state records are the right facet", async () => {
       const db = new EventDB({} as DocumentClient, "fakeName", "facetName");
       try {
-        await db.putHead(newHeadRecord("incorrect_facet", "", 0, {}, new Date()), 0);
+        await db.putState(newStateRecord("incorrect_facet", "", 0, {}, new Date()), 0);
       } catch (e) {
         expect(e.message).toBe(
-          'putHead: head record has mismatched facet. Expected: "facetName", got: "incorrect_facet"',
+          'putState: state record has mismatched facet. Expected: "facetName", got: "incorrect_facet"',
         );
       }
     });
-    it("validates data records are the right type", async () => {
+    it("validates inbound records are the right type", async () => {
       const db = new EventDB({} as DocumentClient, "fakeName", "facetName");
       try {
-        await db.putHead(newHeadRecord("facetName", "", 0, {}, new Date()), 0, [
-          newEventRecord("facetName", "id", 0, 1, "facetEvent", {}, new Date()),
+        await db.putState(newStateRecord("facetName", "", 0, {}, new Date()), 0, [
+          newOutboundRecord("facetName", "id", 0, 1, "facetEvent", {}, new Date()),
         ]);
       } catch (e) {
-        expect(e.message).toBe("putHead: invalid data record");
+        expect(e.message).toBe("putState: invalid inbound record");
       }
     });
-    it("validates data records are the right facet", async () => {
+    it("validates inbound records are the right facet", async () => {
       const db = new EventDB({} as DocumentClient, "fakeName", "facetName");
       try {
-        await db.putHead(newHeadRecord("facetName", "", 0, {}, new Date()), 0, [
-          newDataRecord("incorrect_facet", "id", 0, "facetEvent", {}, new Date()),
+        await db.putState(newStateRecord("facetName", "", 0, {}, new Date()), 0, [
+          newInboundRecord("incorrect_facet", "id", 0, "facetEvent", {}, new Date()),
         ]);
       } catch (e) {
-        expect(e.message).toBe("putHead: invalid facet for data record");
+        expect(e.message).toBe("putState: invalid facet for inbound record");
       }
     });
-    it("validates event records are the right type", async () => {
+    it("validates outbound records are the right type", async () => {
       const db = new EventDB({} as DocumentClient, "fakeName", "facetName");
       try {
-        await db.putHead(
-          newHeadRecord("facetName", "", 0, {}, new Date()),
+        await db.putState(
+          newStateRecord("facetName", "", 0, {}, new Date()),
           0,
-          [newDataRecord("facetName", "id", 0, "facetEvent", {}, new Date())],
-          [newDataRecord("facetName", "id", 0, "facetEvent", {}, new Date())],
+          [newInboundRecord("facetName", "id", 0, "facetEvent", {}, new Date())],
+          [newInboundRecord("facetName", "id", 0, "facetEvent", {}, new Date())],
         );
       } catch (e) {
-        expect(e.message).toBe("putHead: invalid event record");
+        expect(e.message).toBe("putState: invalid outbound record");
       }
     });
-    it("validates event records are the right facet", async () => {
+    it("validates outbound records are the right facet", async () => {
       const db = new EventDB({} as DocumentClient, "fakeName", "facetName");
       try {
-        await db.putHead(
-          newHeadRecord("facetName", "", 0, {}, new Date()),
+        await db.putState(
+          newStateRecord("facetName", "", 0, {}, new Date()),
           0,
-          [newDataRecord("facetName", "id", 0, "facetEvent", {}, new Date())],
-          [newEventRecord("incorrect_facet", "id", 0, 1, "eventType", {}, new Date())],
+          [newInboundRecord("facetName", "id", 0, "facetEvent", {}, new Date())],
+          [newOutboundRecord("incorrect_facet", "id", 0, 1, "outboundType", {}, new Date())],
         );
       } catch (e) {
-        expect(e.message).toBe("putHead: invalid facet for event record");
+        expect(e.message).toBe("putState: invalid facet for outbound record");
       }
     });
     it("validates that only 25 records can be posted at once", async () => {
       const db = new EventDB({} as DocumentClient, "fakeName", "facetName");
-      const dataRecords = Array.from(new Array(26), (i) =>
-        newDataRecord("facetName", "id", i, "typeName", {}, new Date()),
+      const inboundRecords = Array.from(new Array(26), (i) =>
+        newInboundRecord("facetName", "id", i, "anyTypeName", {}, new Date()),
       );
       try {
-        await db.putHead(newHeadRecord("facetName", "", 0, {}, new Date()), 0, dataRecords);
+        await db.putState(newStateRecord("facetName", "", 0, {}, new Date()), 0, inboundRecords);
       } catch (e) {
         expect(e.message).toBe(
-          "putHead: cannot exceed maximum DynamoDB transaction count of 25. The transaction attempted to write 27.",
+          "putState: cannot exceed maximum DynamoDB transaction count of 25. The transaction attempted to write 27.",
         );
       }
     });
