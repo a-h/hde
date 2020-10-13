@@ -25,12 +25,7 @@ export interface StateUpdaterInput<TState, TCurrent> {
 // due to a state change. Reading through all the inbound events, and applying the rules creates
 // a materialised view. This view is the "STATE" record stored in the database.
 export class Event<T> {
-  type: string;
-  event: T | null;
-  constructor(type: string, event: T | null) {
-    this.type = type;
-    this.event = event;
-  }
+  constructor(readonly type: string, readonly event: T | null) {}
 }
 
 // RecordTypeName should be the name of the record's type, e.g. AccountDetails.
