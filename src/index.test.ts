@@ -137,9 +137,9 @@ describe("facet", () => {
       facet.appendTo = async (id, state, seq): Promise<ChangeOutput<TestItem>> => {
         expect(id).toEqual("id");
         expect(state).toBe(null);
-        expect(seq).toEqual(1);
+        expect(seq).toEqual(0);
         return {
-          seq: 1,
+          seq: 0,
           item: {},
         } as ChangeOutput<TestItem>;
       };

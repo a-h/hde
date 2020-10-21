@@ -97,7 +97,7 @@ export class Facet<T> {
   async append(id: string, ...newInboundEvents: Array<Event<any>>): Promise<ChangeOutput<T>> {
     const stateRecord = await this.get(id);
     const state = stateRecord ? stateRecord.item : null;
-    const seq = stateRecord ? stateRecord.record._seq : 1;
+    const seq = stateRecord ? stateRecord.record._seq : 0;
     return this.appendTo(id, state, seq, ...newInboundEvents);
   }
   // appendTo appends new events to an item that has already been retrieved from the
