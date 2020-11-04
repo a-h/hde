@@ -94,6 +94,8 @@ export class Facet<T> {
   }
   // append new event(s) to an item. This method executes two database commands,
   // one to retrieve the current state value, and one to put the updated state back.
+  // If your processor requires access to previous events, not just the state record,
+  // then you should use the recalculate method.
   async append(id: string, ...newInboundEvents: Array<Event<any>>): Promise<ChangeOutput<T>> {
     const stateRecord = await this.get(id);
     const state = stateRecord ? stateRecord.item : null;
