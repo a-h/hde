@@ -68,7 +68,7 @@ describe("facet", () => {
         item: expectedState,
       };
       const db = new MockDB();
-      db.getState = async () => await expectedRecord;
+      db.getState = async () => expectedRecord;
       const emptyRules = new Map<
         RecordTypeName,
         StateUpdater<TestItem, TestEvent, TestEvent, TestEvent>
@@ -361,7 +361,7 @@ describe("facet", () => {
       const event1 = { eventName: "event1" };
       const event2 = { eventName: "event2" };
       db.getRecords = async (_id: string): Promise<Array<Record>> =>
-        await new Array<Record>(
+        new Array<Record>(
           newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", e1, now),
           newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", e2, now),
           newOutboundRecord("TestItem", "id", 3, 0, "OldEvent", event1, now),
@@ -413,7 +413,7 @@ describe("facet", () => {
 
       // Return data incorrectly sorted.
       db.getRecords = async (_id: string): Promise<Array<Record>> =>
-        await new Array<Record>(
+        new Array<Record>(
           newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", data2, now),
           newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", data1, now),
           newInboundRecord<TestEvent>("TestItem", "id", 3, "TestEvent", data3, now),

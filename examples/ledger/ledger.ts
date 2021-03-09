@@ -24,6 +24,8 @@ interface BankAccount {
 const BankAccountRecordName = "BANK_ACCOUNT";
 
 // Inbound events must have a name.
+type InboundEvents = AccountCreation | AccountUpdate | Transaction
+
 interface AccountCreation {
   id: string;
 }
@@ -41,6 +43,8 @@ const TransactionRecordName = "TRANSACTION_ACCEPTED";
 
 // Outbound events don't need to be named, they're named when they're sent, so it's still a good
 // idea to set the name.
+type OutboundEvents = AccountOverdrawn
+
 interface AccountOverdrawn {
   accountId: string;
 }
@@ -66,17 +70,18 @@ const demonstrateLedger = async () => {
   // between the transaction starting (reading all the previous events), and completing (updating
   // the state), another event will have been inserted, resulting in the transaction
   // failing and needing to be executed again.
-  const rules = new Map<RecordTypeName, StateUpdater<BankAccount, any>>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rules = new Map<RecordTypeName, StateUpdater<BankAccount, InboundEvents, OutboundEvents, any>>();
   rules.set(
     AccountCreationRecordName,
-    (input: StateUpdaterInput<BankAccount, AccountCreation>): BankAccount => {
+    (input: StateUpdaterInput<BankAccount, InboundEvents, OutboundEvents, AccountCreation>): BankAccount => {
       input.state.id = input.current.id;
       return input.state;
     },
   );
   rules.set(
     TransactionRecordName,
-    (input: StateUpdaterInput<BankAccount, Transaction>): BankAccount => {
+    (input: StateUpdaterInput<BankAccount, InboundEvents, OutboundEvents, Transaction>): BankAccount => {
       const previousBalance = input.state.balance;
       const newBalance = input.state.balance + input.current.amount;
 
@@ -97,7 +102,7 @@ const demonstrateLedger = async () => {
   );
   rules.set(
     AccountUpdateRecordName,
-    (input: StateUpdaterInput<BankAccount, AccountUpdate>): BankAccount => {
+    (input: StateUpdaterInput<BankAccount, InboundEvents, OutboundEvents, AccountUpdate>): BankAccount => {
       input.state.ownerFirst = input.current.ownerFirst;
       input.state.ownerLast = input.current.ownerLast;
       return input.state;
@@ -112,10 +117,10 @@ const demonstrateLedger = async () => {
     } as BankAccount);
 
   // Create the processor that handles events.
-  const processor = new Processor<BankAccount>(rules, initialAccount);
+  const processor = new Processor<BankAccount, InboundEvents, OutboundEvents>(rules, initialAccount);
 
   // Can now create a ledger "Facet" in our DynamoDB table.
-  const ledger = new Facet<BankAccount>(BankAccountRecordName, db, processor);
+  const ledger = new Facet<BankAccount, InboundEvents, OutboundEvents>(BankAccountRecordName, db, processor);
 
   // Let's create a new account.
   const accountId = Math.round(Math.random() * 1000000).toString();

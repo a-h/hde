@@ -37,6 +37,8 @@ interface OrderItem {
 }
 
 // Inbound events must have a name.
+type InboundEvents = OrderCreated | PaymentCompleted;
+
 interface OrderCreated {
   id: string;
   items: Array<OrderItem>;
@@ -55,6 +57,8 @@ interface PaymentIntent {
 }
 
 // Outbound events.
+type OutboundEvents = OrderPaid;
+
 interface OutboundEvent {
   eventSource: string;
   eventCreatedDate: Date;
@@ -84,11 +88,12 @@ const demonstrate = async () => {
   // between the transaction starting (reading all the previous events), and completing (updating
   // the state), another event will have been inserted, resulting in the transaction
   // failing and needing to be executed again.
-  const rules = new Map<RecordTypeName, StateUpdater<Order, any>>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rules = new Map<RecordTypeName, StateUpdater<Order, InboundEvents, OutboundEvents, any>>();
   // Handle the creation of new orders.
   rules.set(
     OrderCreatedRecordName,
-    (input: StateUpdaterInput<Order, OrderCreated>): Order => {
+    (input: StateUpdaterInput<Order, InboundEvents, OutboundEvents, OrderCreated>): Order => {
       input.state.id = input.current.id;
       input.state.items = input.current.items;
       // Calculate how much the customer owes.
@@ -102,7 +107,7 @@ const demonstrate = async () => {
   );
   rules.set(
     PaymentCompletedRecordName,
-    (input: StateUpdaterInput<Order, PaymentCompleted>): Order => {
+    (input: StateUpdaterInput<Order, InboundEvents, OutboundEvents, PaymentCompleted>): Order => {
       // If there's no initial state, then this order doesn't exist.
       if (!input.state) {
         throw new Error(`Order "${input.current.intent.invoice}" doesn't exist.`);
@@ -112,12 +117,15 @@ const demonstrate = async () => {
       // If we find one, then this is a duplicate and can safely be ignored.
       // In this case, there's a unique ID on the event, but if not, you might need to hash the events.
       input.state.intentIds = input.state.intentIds ?? new Array<string>();
-      const previousPaymentCompletedEvent = input.state.intentIds
-        .find((intendId) => intendId === input.current.intent.id);
+      const previousPaymentCompletedEvent = input.state.intentIds.find(
+        (intendId) => intendId === input.current.intent.id,
+      );
 
       // Exit early, it's a duplicate message.
       if (previousPaymentCompletedEvent) {
-        console.log(`Received duplicate payment intent ${input.current.intent.id}, will store the duplicate, but also not make any changes.`);
+        console.log(
+          `Received duplicate payment intent ${input.current.intent.id}, will store the duplicate, but also not make any changes.`,
+        );
         return input.state;
       }
 
@@ -139,10 +147,10 @@ const demonstrate = async () => {
   );
 
   // Create the processor that handles events.
-  const processor = new Processor<Order>(rules);
+  const processor = new Processor<Order, InboundEvents, OutboundEvents>(rules);
 
   // Can now create an order "Facet" in our DynamoDB table.
-  const order = new Facet<Order>(OrderRecordName, db, processor);
+  const order = new Facet<Order, InboundEvents, OutboundEvents>(OrderRecordName, db, processor);
 
   // Let's create a new order.
   const orderId = Math.round(Math.random() * 1000000).toString();

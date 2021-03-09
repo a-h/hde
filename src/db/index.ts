@@ -61,7 +61,7 @@ export const newStateRecord = <T>(
   time: Date,
 ): StateRecord => newRecord(facet, id, seq, "STATE", facet, item, time);
 
-export const isStateRecord = (r: StateRecord) => r._rng === "STATE";
+export const isStateRecord = (r: StateRecord): boolean => r._rng === "STATE";
 
 const inboundRecordRangeKey = (type: string, seq: number) => `INBOUND/${type}/${seq}`;
 
@@ -74,7 +74,7 @@ export const newInboundRecord = <T>(
   time: Date,
 ): InboundRecord => newRecord(facet, id, seq, inboundRecordRangeKey(type, seq), type, item, time);
 
-export const isInboundRecord = (r: InboundRecord) => r._rng.startsWith("INBOUND");
+export const isInboundRecord = (r: InboundRecord): boolean => r._rng.startsWith("INBOUND");
 
 const outboundRecordRangeKey = (type: string, seq: number, index: number) =>
   `OUTBOUND/${type}/${seq}/${index}`;
@@ -90,7 +90,7 @@ export const newOutboundRecord = <T>(
 ): OutboundRecord =>
   newRecord(facet, id, seq, outboundRecordRangeKey(type, seq, index), type, item, time);
 
-export const isOutboundRecord = (r: OutboundRecord) => r._rng.startsWith("OUTBOUND");
+export const isOutboundRecord = (r: OutboundRecord): boolean => r._rng.startsWith("OUTBOUND");
 
 const createPut = (table: string, r: Record): DocumentClient.TransactWriteItem => ({
   Put: {
@@ -148,7 +148,7 @@ export class EventDB {
     previousSeq: number,
     inbound: Array<InboundRecord> = [],
     outbound: Array<OutboundRecord> = [],
-  ) {
+  ): Promise<void> {
     if (!isStateRecord(state)) {
       throw Error("putState: invalid state record");
     }

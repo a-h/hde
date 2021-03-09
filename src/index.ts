@@ -113,7 +113,7 @@ export class Facet<TState, TInputEvents, TOutputEvents> {
     state: TState | null,
     seq: number,
     ...newInboundEvents: Array<Event<TInputEvents>>
-  ) {
+  ): Promise<ChangeOutput<TState, TOutputEvents>> {
     return await this.calculate(id, state, seq, new Array<InboundRecord>(), ...newInboundEvents);
   }
   // recalculate all the state by reading all previous records in the facet item and

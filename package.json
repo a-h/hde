@@ -8,6 +8,7 @@
     "build": "tsc",
     "prepublish": "tsc",
     "test": "npx jest",
+    "lint": "npx eslint . --ext .js,.jsx,.ts,.tsx",
     "coverage": "npx jest --collect-coverage",
     "dynamodb": "docker run --rm -p 8000:8000 -v $(pwd)/dbstore:/dbstore amazon/dynamodb-local -jar DynamoDBLocal.jar -sharedDb -dbPath /dbstore"
   },
@@ -25,8 +26,11 @@
     "@babel/preset-env": "^7.11.0",
     "@babel/preset-typescript": "^7.10.4",
     "@types/jest": "^26.0.8",
+    "@typescript-eslint/eslint-plugin": "^4.17.0",
+    "@typescript-eslint/parser": "^4.17.0",
+    "eslint": "^7.21.0",
     "jest": "^26.2.2",
     "ts-node": "^8.10.2",
-    "typescript": "^3.9.7"
+    "typescript": "^3.9.9"
   }
 }
