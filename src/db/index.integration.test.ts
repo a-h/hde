@@ -44,8 +44,22 @@ describe("EventDB", () => {
         const state = { key: "value1" };
         const stateRecord = newStateRecord<any>("facetName", "idValue", 3, state, new Date());
         const inboundRecords = [
-          newInboundRecord("facetName", "idValue", 1, "inbound", { record: "inbound1" }, new Date()),
-          newInboundRecord("facetName", "idValue", 2, "inbound", { record: "inbound2" }, new Date()),
+          newInboundRecord(
+            "facetName",
+            "idValue",
+            1,
+            "inbound",
+            { record: "inbound1" },
+            new Date(),
+          ),
+          newInboundRecord(
+            "facetName",
+            "idValue",
+            2,
+            "inbound",
+            { record: "inbound2" },
+            new Date(),
+          ),
         ];
         await db.putState(stateRecord, 0, inboundRecords);
 
@@ -62,12 +76,42 @@ describe("EventDB", () => {
         const state = { key: "value1" };
         const stateRecord = newStateRecord<any>("facetName", "idValue", 5, state, new Date());
         const inboundRecords = [
-          newInboundRecord("facetName", "idValue", 1, "inbound", { record: "inbound1" }, new Date()),
-          newInboundRecord("facetName", "idValue", 2, "inbound", { record: "inbound2" }, new Date()),
+          newInboundRecord(
+            "facetName",
+            "idValue",
+            1,
+            "inbound",
+            { record: "inbound1" },
+            new Date(),
+          ),
+          newInboundRecord(
+            "facetName",
+            "idValue",
+            2,
+            "inbound",
+            { record: "inbound2" },
+            new Date(),
+          ),
         ];
         const outboundRecords = [
-          newOutboundRecord("facetName", "idValue", 3, 0, "inbound", { record: "inbound1" }, new Date()),
-          newOutboundRecord("facetName", "idValue", 3, 1, "outbound", { outbound: "test1" }, new Date()),
+          newOutboundRecord(
+            "facetName",
+            "idValue",
+            3,
+            0,
+            "inbound",
+            { record: "inbound1" },
+            new Date(),
+          ),
+          newOutboundRecord(
+            "facetName",
+            "idValue",
+            3,
+            1,
+            "outbound",
+            { outbound: "test1" },
+            new Date(),
+          ),
         ];
         await db.putState(stateRecord, 0, inboundRecords, outboundRecords);
 
@@ -166,10 +210,16 @@ interface DB {
 const randomTableName = () => `eventdb_test_${new Date().getTime()}`;
 
 const createLocalTable = async (): Promise<DB> => {
-  const ddb = new DynamoDB({
+  const options = {
     region: "eu-west-1",
     endpoint: "http://localhost:8000",
-  });
+    credentials: {
+      accessKeyId: "5dyqqr",
+      secretAccessKey: "fqm4vf",
+    },
+  };
+
+  const ddb = new DynamoDB(options);
   const tableName = randomTableName();
   await ddb
     .createTable({
@@ -202,10 +252,7 @@ const createLocalTable = async (): Promise<DB> => {
 
   return {
     name: tableName,
-    client: new DocumentClient({
-      region: "eu-west-1",
-      endpoint: "http://localhost:8000",
-    }),
+    client: new DocumentClient(options),
     delete: async () => await ddb.deleteTable({ TableName: tableName }).promise(),
   };
 };

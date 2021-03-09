@@ -17,11 +17,11 @@ export interface GetOutput<T> {
   item: T;
 }
 
-export interface ChangeOutput<T> {
+export interface ChangeOutput<TState, TOutputEvent> {
   seq: number;
-  item: T;
-  pastOutboundEvents: Array<Event<any>>;
-  newOutboundEvents: Array<Event<any>>;
+  item: TState;
+  pastOutboundEvents: Array<Event<TOutputEvent>>;
+  newOutboundEvents: Array<Event<TOutputEvent>>;
 }
 
 // DB is the database access required by Facet<T>. Use EventDB.
@@ -50,22 +50,22 @@ interface RecordsOutput {
 // to be queued for delivery at the same time as the transaction is comitted, removing
 // the risk of an item being updated, but a message not being sent (e.g. because SQS
 // was temporarily unavailable).
-export class Facet<T> {
+export class Facet<TState, TInputEvents, TOutputEvents> {
   name: string;
   db: DB;
-  processor: Processor<T>;
-  constructor(name: string, db: DB, processor: Processor<T>) {
+  processor: Processor<TState, TInputEvents, TOutputEvents>;
+  constructor(name: string, db: DB, processor: Processor<TState, TInputEvents, TOutputEvents>) {
     this.name = name;
     this.db = db;
     this.processor = processor;
   }
-  async get(id: string): Promise<GetOutput<T> | null> {
+  async get(id: string): Promise<GetOutput<TState> | null> {
     const state = await this.db.getState(id);
     return state
       ? ({
           record: state,
-          item: JSON.parse(state._itm) as T,
-        } as GetOutput<T>)
+          item: JSON.parse(state._itm) as TState,
+        } as GetOutput<TState>)
       : null;
   }
   private async records(id: string): Promise<RecordsOutput> {
@@ -96,7 +96,10 @@ export class Facet<T> {
   // one to retrieve the current state value, and one to put the updated state back.
   // If your processor requires access to previous events, not just the state record,
   // then you should use the recalculate method.
-  async append(id: string, ...newInboundEvents: Array<Event<any>>): Promise<ChangeOutput<T>> {
+  async append(
+    id: string,
+    ...newInboundEvents: Array<Event<TInputEvents>>
+  ): Promise<ChangeOutput<TState, TOutputEvents>> {
     const stateRecord = await this.get(id);
     const state = stateRecord ? stateRecord.item : null;
     const seq = stateRecord ? stateRecord.record._seq : 0;
@@ -105,13 +108,21 @@ export class Facet<T> {
   // appendTo appends new events to an item that has already been retrieved from the
   // database. This method executes a single database command to update the state
   // record.
-  async appendTo(id: string, state: T | null, seq: number, ...newInboundEvents: Array<Event<any>>) {
-    return this.calculate(id, state, seq, new Array<InboundRecord>(), ...newInboundEvents);
+  async appendTo(
+    id: string,
+    state: TState | null,
+    seq: number,
+    ...newInboundEvents: Array<Event<TInputEvents>>
+  ) {
+    return await this.calculate(id, state, seq, new Array<InboundRecord>(), ...newInboundEvents);
   }
   // recalculate all the state by reading all previous records in the facet item and
   // processing each inbound event record. This method may execute multiple Query operations
   // and a single put operation.
-  async recalculate(id: string, ...newInboundEvents: Array<Event<any>>): Promise<ChangeOutput<T>> {
+  async recalculate(
+    id: string,
+    ...newInboundEvents: Array<Event<TInputEvents>>
+  ): Promise<ChangeOutput<TState, TOutputEvents>> {
     // Get the records.
     const records = await this.records(id);
     const seq = records.state ? records.state._seq : 0;
@@ -120,12 +131,14 @@ export class Facet<T> {
   // calculate the state.
   private async calculate(
     id: string,
-    state: T | null,
+    state: TState | null,
     seq: number,
     pastInboundEvents: Array<InboundRecord>,
-    ...newInboundEvents: Array<Event<any>>
-  ): Promise<ChangeOutput<T>> {
-    const pastEvents = pastInboundEvents.map((e) => new Event<any>(e._typ, JSON.parse(e._itm)));
+    ...newInboundEvents: Array<Event<TInputEvents>>
+  ): Promise<ChangeOutput<TState, TOutputEvents>> {
+    const pastEvents = pastInboundEvents.map(
+      (e) => new Event<TInputEvents>(e._typ, JSON.parse(e._itm)),
+    );
     const newInboundEventsSequence = newInboundEvents.map((e) => new Event(e.type, e.event));
 
     // Process the events.
@@ -154,7 +167,7 @@ export class Facet<T> {
       item: processingResult.state,
       pastOutboundEvents: processingResult.pastOutboundEvents,
       newOutboundEvents: processingResult.newOutboundEvents,
-    } as ChangeOutput<T>;
+    } as ChangeOutput<TState, TOutputEvents>;
   }
 }
 

@@ -21,11 +21,11 @@ export interface Record {
 }
 
 // A StateRecord represents the current state of an item.
-export interface StateRecord extends Record {}
+export type StateRecord = Record;
 // InboundRecords represent all of the change events assocated with an item.
-export interface InboundRecord extends Record {}
+export type InboundRecord = Record;
 // OutboundRecords are the events sent to external systems due to item changes.
-export interface OutboundRecord extends Record {}
+export type OutboundRecord = Record;
 
 const facetId = (facet: string, id: string) => `${facet}/${id}`;
 

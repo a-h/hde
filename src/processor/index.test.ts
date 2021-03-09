@@ -18,9 +18,9 @@ class Sample {
 
 describe("Processor<T>", () => {
   it("uses the initial value to base processing on", () => {
-    const rules = new Map<string, StateUpdater<Window, any>>();
+    const rules = new Map<string, StateUpdater<Window, any, any, any>>();
     const initial = () => new Window(5, [1, 2, 3, 4, 5]);
-    const p = new Processor<Window>(rules, initial);
+    const p = new Processor<Window, any, any>(rules, initial);
 
     const actual = p.process(null);
 
@@ -29,17 +29,17 @@ describe("Processor<T>", () => {
     expect(actual.pastOutboundEvents).toHaveLength(0);
   });
   it("uses a default initial value if none is provided", () => {
-    const rules = new Map<string, StateUpdater<Window, any>>();
-    const p = new Processor<Window>(rules);
+    const rules = new Map<string, StateUpdater<Window, any, any, any>>();
+    const p = new Processor<Window, any, any>(rules);
 
     const actual = p.process(null);
 
     expect(actual.state).toEqual({});
   });
   it("uses the state value in preference to the initial function if possible", () => {
-    const rules = new Map<string, StateUpdater<Window, any>>();
+    const rules = new Map<string, StateUpdater<Window, any, any, any>>();
     const initial = () => ({} as Window);
-    const p = new Processor<Window>(rules, initial);
+    const p = new Processor<Window, any, any>(rules, initial);
 
     const state = new Window(5, [1, 2, 3, 4, 5]);
     const actual = p.process(state);
@@ -49,15 +49,17 @@ describe("Processor<T>", () => {
     expect(actual.pastOutboundEvents).toHaveLength(0);
   });
   it("does not take action on unknown record types", () => {
-    const rules = new Map<string, StateUpdater<Window, any>>();
+    type TestEvent = unknown;
+
+    const rules = new Map<string, StateUpdater<Window, TestEvent, TestEvent, TestEvent>>();
     const unknownHandler = jest.fn();
     rules.set("UNKNOWN", unknownHandler);
     const initial = () => ({} as Window);
-    const p = new Processor<Window>(rules, initial);
+    const p = new Processor<Window, TestEvent, TestEvent>(rules, initial);
 
     const state = new Window(5, [1, 2, 3, 4, 5]);
-    const previous = new Array<Event<any>>(new Event("KNOWN", {}));
-    const next = new Array<Event<any>>(new Event("KNOWN", {}));
+    const previous = new Array<Event<TestEvent>>(new Event("KNOWN", {}));
+    const next = new Array<Event<TestEvent>>(new Event("KNOWN", {}));
     const actual = p.process(state, previous, next);
 
     expect(actual.state).toEqual(new Window(5, [1, 2, 3, 4, 5]));
@@ -66,8 +68,8 @@ describe("Processor<T>", () => {
     expect(unknownHandler).not.toHaveBeenCalled();
   });
   it("takes action on known record types, for previous and new data", () => {
-    const rules = new Map<string, StateUpdater<Window, any>>();
-    rules.set("SAMPLE", (input: StateUpdaterInput<Window, Sample>) => {
+    const rules = new Map<string, StateUpdater<Window, Sample, Sample, Sample>>();
+    rules.set("SAMPLE", (input: StateUpdaterInput<Window, Sample, Sample, Sample>) => {
       input.state.values.push(input.current.value);
       if (input.state.values.length > input.state.size) {
         input.state.values = input.state.values.slice(1);
@@ -75,15 +77,15 @@ describe("Processor<T>", () => {
       return input.state;
     });
     const initial = () => ({} as Window);
-    const p = new Processor<Window>(rules, initial);
+    const p = new Processor<Window, Sample, Sample>(rules, initial);
 
     const state = new Window(5, []);
-    const previous = new Array<Event<any>>(
+    const previous = new Array<Event<Sample>>(
       new Event("SAMPLE", new Sample(1)),
       new Event("SAMPLE", new Sample(2)),
       new Event("SAMPLE", new Sample(3)),
     );
-    const next = new Array<Event<any>>(
+    const next = new Array<Event<Sample>>(
       new Event("SAMPLE", new Sample(4)),
       new Event("SAMPLE", new Sample(5)),
       new Event("SAMPLE", new Sample(6)),
@@ -95,8 +97,11 @@ describe("Processor<T>", () => {
     expect(actual.pastOutboundEvents).toHaveLength(0);
   });
   it("can publish events", () => {
-    const rules = new Map<string, StateUpdater<Window, any>>();
-    rules.set("SAMPLE", (input: StateUpdaterInput<Window, Sample>) => {
+    interface OutputEvent {
+      sum: number;
+    }
+    const rules = new Map<string, StateUpdater<Window, Sample, OutputEvent, Sample>>();
+    rules.set("SAMPLE", (input: StateUpdaterInput<Window, Sample, OutputEvent, Sample>) => {
       input.state.values.push(input.current.value);
       if (input.state.values.length > input.state.size) {
         input.state.values = input.state.values.slice(1);
@@ -110,15 +115,15 @@ describe("Processor<T>", () => {
       }
       return input.state;
     });
-    const p = new Processor<Window>(rules);
+    const p = new Processor<Window, Sample, OutputEvent>(rules);
 
     const state = new Window(5, []);
-    const previous = new Array<Event<any>>(
+    const previous = new Array<Event<Sample>>(
       new Event("SAMPLE", new Sample(1)),
       new Event("SAMPLE", new Sample(2)),
       new Event("SAMPLE", new Sample(3)),
     );
-    const next = new Array<Event<any>>(
+    const next = new Array<Event<Sample>>(
       new Event("SAMPLE", new Sample(4)),
       new Event("SAMPLE", new Sample(5)),
       new Event("SAMPLE", new Sample(6)),

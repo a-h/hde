@@ -1,12 +1,5 @@
 import { Facet, DB, GetOutput, ChangeOutput } from ".";
-import {
-  RecordTypeName,
-  StateUpdater,
-  RecordType,
-  StateUpdaterInput,
-  Processor,
-  Event,
-} from "./processor";
+import { RecordTypeName, StateUpdater, StateUpdaterInput, Processor, Event } from "./processor";
 import {
   Record,
   StateRecord,
@@ -55,9 +48,12 @@ describe("facet", () => {
   describe("get", () => {
     it("returns null when the db returns null", async () => {
       const db = new MockDB();
-      const emptyRules = new Map<RecordTypeName, StateUpdater<any, RecordType>>();
-      const processor = new Processor<any>(emptyRules);
-      const facet = new Facet<any>("name", db, processor);
+      const emptyRules = new Map<
+        RecordTypeName,
+        StateUpdater<TestItem, TestEvent, TestEvent, TestEvent>
+      >();
+      const processor = new Processor<TestItem, TestEvent, TestEvent>(emptyRules);
+      const facet = new Facet<TestItem, TestEvent, TestEvent>("name", db, processor);
 
       const state = await facet.get("abc");
 
@@ -72,10 +68,13 @@ describe("facet", () => {
         item: expectedState,
       };
       const db = new MockDB();
-      db.getState = async () => expectedRecord;
-      const emptyRules = new Map<RecordTypeName, StateUpdater<any, RecordType>>();
-      const processor = new Processor<any>(emptyRules);
-      const facet = new Facet<any>("name", db, processor);
+      db.getState = async () => await expectedRecord;
+      const emptyRules = new Map<
+        RecordTypeName,
+        StateUpdater<TestItem, TestEvent, TestEvent, TestEvent>
+      >();
+      const processor = new Processor<TestItem, TestEvent, TestEvent>(emptyRules);
+      const facet = new Facet<TestItem, TestEvent, TestEvent>("name", db, processor);
 
       const getOutput = await facet.get("abc");
 
@@ -84,6 +83,10 @@ describe("facet", () => {
   });
   describe("append", () => {
     it("stores new events in the database", async () => {
+      interface EventForTest {
+        name: string;
+      }
+
       const event1 = {
         name: "event1",
       };
@@ -107,7 +110,10 @@ describe("facet", () => {
       };
 
       // Create the rules.
-      const publishEvent = new Map<RecordTypeName, StateUpdater<TestItem, RecordType>>();
+      const publishEvent = new Map<
+        RecordTypeName,
+        StateUpdater<TestItem, EventForTest, EventForTest, EventForTest>
+      >();
       publishEvent.set("Record1", (input) => {
         input.publish("eventName1", event1);
         return input.state;
@@ -117,11 +123,6 @@ describe("facet", () => {
         input.publish("eventName2.2", event22);
         return input.state;
       });
-
-      const processor = new Processor<TestItem>(publishEvent, () => initial);
-
-      const facet = new Facet<TestItem>("name", db, processor);
-      await facet.append("id", new Event("Record1", {}), new Event("Record2", {}));
     });
     it("uses defaults if no state record exists", async () => {
       const initial: TestItem = { a: "0", b: "empty" };
@@ -130,18 +131,21 @@ describe("facet", () => {
       db.getRecords = async (_id: string): Promise<Array<Record>> => [];
 
       // Create empty rules.
-      const publishEvent = new Map<RecordTypeName, StateUpdater<TestItem, RecordType>>();
-      const processor = new Processor<TestItem>(publishEvent, () => initial);
+      const publishEvent = new Map<
+        RecordTypeName,
+        StateUpdater<TestItem, TestEvent, TestEvent, TestEvent>
+      >();
+      const processor = new Processor<TestItem, any, any>(publishEvent, () => initial);
 
-      const facet = new Facet<TestItem>("name", db, processor);
-      facet.appendTo = async (id, state, seq): Promise<ChangeOutput<TestItem>> => {
+      const facet = new Facet<TestItem, TestEvent, TestEvent>("name", db, processor);
+      facet.appendTo = async (id, state, seq): Promise<ChangeOutput<TestItem, TestEvent>> => {
         expect(id).toEqual("id");
         expect(state).toBe(null);
         expect(seq).toEqual(0);
         return {
           seq: 0,
           item: {},
-        } as ChangeOutput<TestItem>;
+        } as ChangeOutput<TestItem, TestEvent>;
       };
       await facet.append("id");
     });
@@ -154,18 +158,18 @@ describe("facet", () => {
         newStateRecord("name", id, 1, expectedState, new Date());
 
       // Create empty rules.
-      const publishEvent = new Map<RecordTypeName, StateUpdater<TestItem, RecordType>>();
-      const processor = new Processor<TestItem>(publishEvent, () => initial);
+      const publishEvent = new Map<RecordTypeName, StateUpdater<TestItem, any, any, any>>();
+      const processor = new Processor<TestItem, TestEvent, TestEvent>(publishEvent, () => initial);
 
-      const facet = new Facet<TestItem>("name", db, processor);
-      facet.appendTo = async (id, state, seq): Promise<ChangeOutput<TestItem>> => {
+      const facet = new Facet<TestItem, TestEvent, TestEvent>("name", db, processor);
+      facet.appendTo = async (id, state, seq): Promise<ChangeOutput<TestItem, TestEvent>> => {
         expect(id).toEqual("id");
         expect(state).toEqual(expectedState);
         expect(seq).toEqual(1);
         return {
           seq: 1,
           item: {},
-        } as ChangeOutput<TestItem>;
+        } as ChangeOutput<TestItem, TestEvent>;
       };
       await facet.append("id");
     });
@@ -173,9 +177,12 @@ describe("facet", () => {
   describe("recalculate", () => {
     it("creates an empty state record on first put if it doesn't exist", async () => {
       const db = new MockDB();
-      const emptyRules = new Map<RecordTypeName, StateUpdater<any, RecordType>>();
-      const processor = new Processor<any>(emptyRules);
-      const facet = new Facet<any>("name", db, processor);
+      const emptyRules = new Map<
+        RecordTypeName,
+        StateUpdater<TestItem, TestEvent, TestEvent, TestEvent>
+      >();
+      const processor = new Processor<TestItem, TestEvent, TestEvent>(emptyRules);
+      const facet = new Facet<TestItem, TestEvent, TestEvent>("name", db, processor);
       const event: TestEvent = { data1: "1", data2: "2" };
 
       const putOutput = await facet.recalculate("id", new Event<TestEvent>("TestEvent", event));
@@ -187,9 +194,12 @@ describe("facet", () => {
     it("creates an initial state record on first put if it doesn't exist", async () => {
       const db = new MockDB();
       const initial: TestItem = { a: "empty", b: "empty" };
-      const emptyRules = new Map<RecordTypeName, StateUpdater<any, RecordType>>();
-      const processor = new Processor<TestItem>(emptyRules, () => initial);
-      const facet = new Facet<any>("name", db, processor);
+      const emptyRules = new Map<
+        RecordTypeName,
+        StateUpdater<TestItem, TestEvent, TestEvent, TestEvent>
+      >();
+      const processor = new Processor<TestItem, TestEvent, TestEvent>(emptyRules, () => initial);
+      const facet = new Facet<TestItem, TestEvent, TestEvent>("name", db, processor);
       const event: TestEvent = { data1: "1", data2: "2" };
 
       const putOutput = await facet.recalculate("id", new Event<TestEvent>("TestEvent", event));
@@ -203,17 +213,20 @@ describe("facet", () => {
       const initial: TestItem = { a: "0", b: "empty" };
       const concatenateEventValuesToHead = new Map<
         RecordTypeName,
-        StateUpdater<TestItem, RecordType>
+        StateUpdater<TestItem, TestEvent, TestEvent, TestEvent>
       >();
       concatenateEventValuesToHead.set(
         "TestEvent",
-        (input: StateUpdaterInput<TestItem, TestEvent>): TestItem => {
+        (input: StateUpdaterInput<TestItem, TestEvent, TestEvent, TestEvent>): TestItem => {
           input.state.a = `${input.state.a}_${input.current.data1}`;
           return input.state;
         },
       );
-      const processor = new Processor<TestItem>(concatenateEventValuesToHead, () => initial);
-      const facet = new Facet<TestItem>("name", db, processor);
+      const processor = new Processor<TestItem, TestEvent, TestEvent>(
+        concatenateEventValuesToHead,
+        () => initial,
+      );
+      const facet = new Facet<TestItem, TestEvent, TestEvent>("name", db, processor);
       const e1: TestEvent = { data1: "1", data2: "" };
       const e2: TestEvent = { data1: "2", data2: "" };
 
@@ -236,17 +249,20 @@ describe("facet", () => {
       // Create the rules.
       const concatenateEventValuesToHead = new Map<
         RecordTypeName,
-        StateUpdater<TestItem, RecordType>
+        StateUpdater<TestItem, TestEvent, TestEvent, TestEvent>
       >();
       concatenateEventValuesToHead.set(
         "TestEvent",
-        (input: StateUpdaterInput<TestItem, TestEvent>): TestItem => {
+        (input: StateUpdaterInput<TestItem, TestEvent, TestEvent, TestEvent>): TestItem => {
           input.state.a = `${input.state.a}_${input.current.data1}`;
           return input.state;
         },
       );
-      const processor = new Processor<TestItem>(concatenateEventValuesToHead, () => initial);
-      const facet = new Facet<TestItem>("name", db, processor);
+      const processor = new Processor<TestItem, TestEvent, TestEvent>(
+        concatenateEventValuesToHead,
+        () => initial,
+      );
+      const facet = new Facet<TestItem, TestEvent, TestEvent>("name", db, processor);
       // Configure the database to already have e1 and e2 present.
       const now = new Date();
       const currentHead: TestItem = { a: "0_1_2", b: "empty" };
@@ -274,17 +290,20 @@ describe("facet", () => {
       // Create the rules.
       const concatenateEventValuesToHead = new Map<
         RecordTypeName,
-        StateUpdater<TestItem, RecordType>
+        StateUpdater<TestItem, TestEvent, TestEvent, TestEvent>
       >();
       concatenateEventValuesToHead.set(
         "TestEvent",
-        (input: StateUpdaterInput<TestItem, TestEvent>): TestItem => {
+        (input: StateUpdaterInput<TestItem, TestEvent, TestEvent, TestEvent>): TestItem => {
           input.state.a = `${input.state.a}_${input.current.data1}`;
           return input.state;
         },
       );
-      const processor = new Processor<TestItem>(concatenateEventValuesToHead, () => initial);
-      const facet = new Facet<TestItem>("name", db, processor);
+      const processor = new Processor<TestItem, TestEvent, TestEvent>(
+        concatenateEventValuesToHead,
+        () => initial,
+      );
+      const facet = new Facet<TestItem, TestEvent, TestEvent>("name", db, processor);
       // Configure the database to already have e1 and e2 present.
       const now = new Date();
       const currentHead: TestItem = { a: "0_1_2", b: "empty" };
@@ -313,18 +332,24 @@ describe("facet", () => {
     it("returns a list of historical and new events", async () => {
       const db = new MockDB();
       const initial: TestItem = { a: "0", b: "empty" };
+      interface TestOutputEvent {
+        payload: TestEvent;
+      }
 
       // Create the rules.
-      const rules = new Map<RecordTypeName, StateUpdater<TestItem, RecordType>>();
+      const rules = new Map<
+        RecordTypeName,
+        StateUpdater<TestItem, TestEvent, TestOutputEvent, TestEvent>
+      >();
       rules.set(
         "TestEvent",
-        (input: StateUpdaterInput<TestItem, TestEvent>): TestItem => {
+        (input: StateUpdaterInput<TestItem, TestEvent, TestOutputEvent, TestEvent>): TestItem => {
           input.publish("eventName", { payload: input.current });
           return input.state;
         },
       );
-      const processor = new Processor<TestItem>(rules, () => initial);
-      const facet = new Facet<TestItem>("name", db, processor);
+      const processor = new Processor<TestItem, TestEvent, TestOutputEvent>(rules, () => initial);
+      const facet = new Facet<TestItem, TestEvent, TestOutputEvent>("name", db, processor);
       // Configure the database to already have data1 and data2 present.
       const now = new Date();
       const currentHead: TestItem = { a: "0_1_2", b: "empty" };
@@ -336,7 +361,7 @@ describe("facet", () => {
       const event1 = { eventName: "event1" };
       const event2 = { eventName: "event2" };
       db.getRecords = async (_id: string): Promise<Array<Record>> =>
-        new Array<Record>(
+        await new Array<Record>(
           newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", e1, now),
           newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", e2, now),
           newOutboundRecord("TestItem", "id", 3, 0, "OldEvent", event1, now),
@@ -348,8 +373,14 @@ describe("facet", () => {
 
       // We get two old events (one raised by e1, one raised by e2).
       expect(putOutput.pastOutboundEvents).toHaveLength(2);
-      expect(putOutput.pastOutboundEvents[0]).toEqual({ type: "eventName", event: { payload: e1 } });
-      expect(putOutput.pastOutboundEvents[1]).toEqual({ type: "eventName", event: { payload: e2 } });
+      expect(putOutput.pastOutboundEvents[0]).toEqual({
+        type: "eventName",
+        event: { payload: e1 },
+      });
+      expect(putOutput.pastOutboundEvents[1]).toEqual({
+        type: "eventName",
+        event: { payload: e2 },
+      });
       // We get a new event too, raised by the new e3.
       expect(putOutput.newOutboundEvents).toHaveLength(1);
       expect(putOutput.newOutboundEvents[0]).toEqual({ type: "eventName", event: { payload: e3 } });
@@ -359,17 +390,20 @@ describe("facet", () => {
       const initial: TestItem = { a: "0", b: "empty" };
 
       // Create the rules.
-      const rules = new Map<RecordTypeName, StateUpdater<TestItem, RecordType>>();
+      const rules = new Map<
+        RecordTypeName,
+        StateUpdater<TestItem, TestEvent, TestEvent, TestEvent>
+      >();
       const received = new Array<string>();
       rules.set(
         "TestEvent",
-        (input: StateUpdaterInput<TestItem, TestEvent>): TestItem => {
+        (input: StateUpdaterInput<TestItem, TestEvent, TestEvent, TestEvent>): TestItem => {
           received.push(input.current.data1);
           return input.state;
         },
       );
-      const processor = new Processor<TestItem>(rules, () => initial);
-      const facet = new Facet<TestItem>("name", db, processor);
+      const processor = new Processor<TestItem, TestEvent, TestEvent>(rules, () => initial);
+      const facet = new Facet<TestItem, TestEvent, TestEvent>("name", db, processor);
       // Configure the database to already have data1 and data2 present.
       const now = new Date();
       const data1: TestEvent = { data1: "1", data2: "" };
@@ -379,7 +413,7 @@ describe("facet", () => {
 
       // Return data incorrectly sorted.
       db.getRecords = async (_id: string): Promise<Array<Record>> =>
-        new Array<Record>(
+        await new Array<Record>(
           newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", data2, now),
           newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", data1, now),
           newInboundRecord<TestEvent>("TestItem", "id", 3, "TestEvent", data3, now),
