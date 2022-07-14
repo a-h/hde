@@ -8,7 +8,6 @@ import { EventDB, newStateRecord, newInboundRecord, newOutboundRecord } from "."
 describe("EventDB", () => {
   describe("getState", () => {
     it("can get the state record if it exists", async () => {
-      jest.setTimeout(120000)
       const testDB = await createLocalTable();
       try {
         const db = new EventDB(testDB.client, testDB.name, "facetName");
