@@ -1,4 +1,5 @@
-import * as AWS from "aws-sdk";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { Facet } from "../../src";
 import { EventDB } from "../../src/db";
 import {
@@ -57,11 +58,13 @@ const demonstrateLedger = async () => {
   //    --attribute-definitions AttributeName=_id,AttributeType=S AttributeName=_rng,AttributeType=S \
   //    --key-schema AttributeName=_id,KeyType=HASH AttributeName=_rng,KeyType=RANGE \
   //    --billing-mode PAY_PER_REQUEST
-  const client = new AWS.DynamoDB.DocumentClient({
+  const ddbClient = new DynamoDBClient({
     region: "eu-west-2",
-  });
+  })
+  const documentClient = DynamoDBDocumentClient.from(ddbClient)
+
   const tableName = "ledger";
-  const db = new EventDB(client, tableName, BankAccountRecordName);
+  const db = new EventDB(documentClient, tableName, BankAccountRecordName);
 
   // The rules define how the BankAccount state is updated by incoming events.
   // For example, an incoming "TRANSACTION" event modifies the "ACCOUNT_BALANCE" state.

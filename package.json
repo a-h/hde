@@ -19,8 +19,9 @@
   "author": "a-h",
   "license": "ISC",
   "dependencies": {
-    "aws-lambda": "^1.0.7",
-    "aws-sdk": "^2.723.0"
+    "@aws-sdk/client-dynamodb": "^3.128.0",
+    "@aws-sdk/lib-dynamodb": "^3.128.0",
+    "aws-lambda": "^1.0.7"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.11.0",
