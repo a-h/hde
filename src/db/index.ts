@@ -120,9 +120,9 @@ const createPutState = (tableName: string, r: BaseRecord, previousSeq: number) =
 });
 
 export class EventDB {
-  client: DynamoDBDocumentClient;
-  table: string;
-  facet: string;
+  readonly client: DynamoDBDocumentClient;
+  readonly table: string;
+  readonly facet: string;
   constructor(client: DynamoDBDocumentClient, table: string, facet: string) {
     this.client = client;
     this.table = table;
