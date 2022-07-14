@@ -8,6 +8,7 @@ import { EventDB, newStateRecord, newInboundRecord, newOutboundRecord } from "."
 describe("EventDB", () => {
   describe("getState", () => {
     it("can get the state record if it exists", async () => {
+      jest.setTimeout(120000)
       const testDB = await createLocalTable();
       try {
         const db = new EventDB(testDB.client, testDB.name, "facetName");
@@ -128,7 +129,7 @@ describe("EventDB", () => {
       const db = new EventDB({} as DynamoDBDocumentClient, "fakeName", "facetName");
       try {
         await db.putState(newOutboundRecord("not_important", "", 0, 0, "test", {}, new Date()), 0);
-      } catch (e) {
+      } catch (e: any) {
         expect(e.message).toBe("putState: invalid state record");
       }
     });
@@ -136,7 +137,7 @@ describe("EventDB", () => {
       const db = new EventDB({} as DynamoDBDocumentClient, "fakeName", "facetName");
       try {
         await db.putState(newStateRecord("incorrect_facet", "", 0, {}, new Date()), 0);
-      } catch (e) {
+      } catch (e: any) {
         expect(e.message).toBe(
           'putState: state record has mismatched facet. Expected: "facetName", got: "incorrect_facet"',
         );
@@ -148,7 +149,7 @@ describe("EventDB", () => {
         await db.putState(newStateRecord("facetName", "", 0, {}, new Date()), 0, [
           newOutboundRecord("facetName", "id", 0, 1, "facetEvent", {}, new Date()),
         ]);
-      } catch (e) {
+      } catch (e: any) {
         expect(e.message).toBe("putState: invalid inbound record");
       }
     });
@@ -158,7 +159,7 @@ describe("EventDB", () => {
         await db.putState(newStateRecord("facetName", "", 0, {}, new Date()), 0, [
           newInboundRecord("incorrect_facet", "id", 0, "facetEvent", {}, new Date()),
         ]);
-      } catch (e) {
+      } catch (e: any) {
         expect(e.message).toBe("putState: invalid facet for inbound record");
       }
     });
@@ -171,7 +172,7 @@ describe("EventDB", () => {
           [newInboundRecord("facetName", "id", 0, "facetEvent", {}, new Date())],
           [newInboundRecord("facetName", "id", 0, "facetEvent", {}, new Date())],
         );
-      } catch (e) {
+      } catch (e: any) {
         expect(e.message).toBe("putState: invalid outbound record");
       }
     });
@@ -184,7 +185,7 @@ describe("EventDB", () => {
           [newInboundRecord("facetName", "id", 0, "facetEvent", {}, new Date())],
           [newOutboundRecord("incorrect_facet", "id", 0, 1, "outboundType", {}, new Date())],
         );
-      } catch (e) {
+      } catch (e: any) {
         expect(e.message).toBe("putState: invalid facet for outbound record");
       }
     });
@@ -195,7 +196,7 @@ describe("EventDB", () => {
       );
       try {
         await db.putState(newStateRecord("facetName", "", 0, {}, new Date()), 0, inboundRecords);
-      } catch (e) {
+      } catch (e: any) {
         expect(e.message).toBe(
           "putState: cannot exceed maximum DynamoDB transaction count of 25. The transaction attempted to write 27.",
         );
