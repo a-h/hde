@@ -1,7 +1,12 @@
-import { DocumentClient } from "aws-sdk/clients/dynamodb";
+import {
+  DynamoDBDocumentClient,
+  GetCommand,
+  QueryCommand,
+  TransactWriteCommand,
+} from "@aws-sdk/lib-dynamodb";
 
 // A record is written to DynamoDB.
-export interface Record {
+export interface BaseRecord {
   // Identifier of the record group.
   _id: string;
   // Event sort key.
@@ -21,11 +26,11 @@ export interface Record {
 }
 
 // A StateRecord represents the current state of an item.
-export type StateRecord = Record;
+export type StateRecord = BaseRecord;
 // InboundRecords represent all of the change events assocated with an item.
-export type InboundRecord = Record;
+export type InboundRecord = BaseRecord;
 // OutboundRecords are the events sent to external systems due to item changes.
-export type OutboundRecord = Record;
+export type OutboundRecord = BaseRecord;
 
 const facetId = (facet: string, id: string) => `${facet}/${id}`;
 
@@ -37,7 +42,7 @@ const newRecord = <T>(
   type: string,
   item: T,
   time: Date,
-): Record =>
+): BaseRecord =>
   ({
     _facet: facet,
     _id: facetId(facet, id),
@@ -47,9 +52,9 @@ const newRecord = <T>(
     _ts: time.getTime(),
     _date: time.toISOString(),
     _itm: JSON.stringify(item),
-  } as Record);
+  } as BaseRecord);
 
-const isFacet = (facet: string, r: Record) => r._facet === facet;
+const isFacet = (facet: string, r: BaseRecord) => r._facet === facet;
 
 // Create a new state record to represent the state of an item.
 // facet: the name of the DynamoDB facet.
@@ -92,57 +97,51 @@ export const newOutboundRecord = <T>(
 
 export const isOutboundRecord = (r: OutboundRecord): boolean => r._rng.startsWith("OUTBOUND");
 
-const createPut = (table: string, r: Record): DocumentClient.TransactWriteItem => ({
-  Put: {
-    TableName: table,
-    Item: r,
-    ConditionExpression: "attribute_not_exists(#_id)",
-    ExpressionAttributeNames: {
-      "#_id": "_id",
-    },
+const createPutItem = (tableName: string, r: BaseRecord) => ({
+  TableName: tableName,
+  Item: r,
+  ConditionExpression: "attribute_not_exists(#_id)",
+  ExpressionAttributeNames: {
+    "#_id": "_id",
   },
 });
 
-const createPutState = (
-  table: string,
-  r: Record,
-  previousSeq: number,
-): DocumentClient.TransactWriteItem => ({
-  Put: {
-    TableName: table,
-    Item: r,
-    ConditionExpression: "attribute_not_exists(#_id) OR #_seq = :_seq",
-    ExpressionAttributeNames: {
-      "#_id": "_id",
-      "#_seq": "_seq",
-    },
-    ExpressionAttributeValues: {
-      ":_seq": previousSeq,
-    },
+const createPutState = (tableName: string, r: BaseRecord, previousSeq: number) => ({
+  TableName: tableName,
+  Item: r,
+  ConditionExpression: "attribute_not_exists(#_id) OR #_seq = :_seq",
+  ExpressionAttributeNames: {
+    "#_id": "_id",
+    "#_seq": "_seq",
+  },
+  ExpressionAttributeValues: {
+    ":_seq": previousSeq,
   },
 });
 
 export class EventDB {
-  client: DocumentClient;
-  table: string;
-  facet: string;
-  constructor(client: DocumentClient, table: string, facet: string) {
+  readonly client: DynamoDBDocumentClient;
+  readonly table: string;
+  readonly facet: string;
+  constructor(client: DynamoDBDocumentClient, table: string, facet: string) {
     this.client = client;
     this.table = table;
     this.facet = facet;
   }
-  async getState(id: string): Promise<Record> {
-    const params = {
+
+  async getState(id: string): Promise<BaseRecord> {
+    const params = new GetCommand({
       TableName: this.table,
       Key: {
         _id: facetId(this.facet, id),
         _rng: "STATE",
       },
       ConsistentRead: true,
-    } as DocumentClient.GetItemInput;
-    const result = await this.client.get(params).promise();
-    return result.Item as Record;
+    });
+    const result = await this.client.send(params);
+    return result.Item as BaseRecord;
   }
+
   async putState(
     state: StateRecord,
     previousSeq: number,
@@ -175,30 +174,35 @@ export class EventDB {
         `putState: cannot exceed maximum DynamoDB transaction count of 25. The transaction attempted to write ${outboundCount}.`,
       );
     }
-    const transactItems = [
-      ...inbound.map((d) => createPut(this.table, d)),
-      ...outbound.map((e) => createPut(this.table, e)),
+
+    const putItems = [
+      ...inbound.map((i) => createPutItem(this.table, i)),
+      ...outbound.map((o) => createPutItem(this.table, o)),
       createPutState(this.table, state, previousSeq),
-    ] as DocumentClient.TransactWriteItemList;
-    const params = {
-      TransactItems: transactItems,
-    } as DocumentClient.TransactWriteItemsInput;
-    await this.client.transactWrite(params).promise();
+    ].map((putItem) => ({ Put: putItem }));
+
+    const transactWriteCommand = new TransactWriteCommand({
+      TransactItems: putItems,
+    });
+
+    await this.client.send(transactWriteCommand);
   }
+
   // getRecords returns all records grouped under the ID.
-  async getRecords(id: string): Promise<Array<Record>> {
-    const params = {
-      TableName: this.table,
-      KeyConditionExpression: "#_id = :_id",
-      ExpressionAttributeNames: {
-        "#_id": "_id",
-      },
-      ExpressionAttributeValues: {
-        ":_id": facetId(this.facet, id),
-      },
-      ConsistentRead: true,
-    } as DocumentClient.QueryInput;
-    const result = await this.client.query(params).promise();
-    return result.Items as Array<Record>;
+  async getRecords(id: string): Promise<Array<BaseRecord>> {
+    const result = await this.client.send(
+      new QueryCommand({
+        TableName: this.table,
+        KeyConditionExpression: "#_id = :_id",
+        ExpressionAttributeNames: {
+          "#_id": "_id",
+        },
+        ExpressionAttributeValues: {
+          ":_id": facetId(this.facet, id),
+        },
+        ConsistentRead: true,
+      }),
+    );
+    return result.Items as Array<BaseRecord>;
   }
 }

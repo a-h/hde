@@ -1,5 +1,5 @@
 import {
-  Record,
+  BaseRecord,
   StateRecord,
   InboundRecord,
   OutboundRecord,
@@ -13,7 +13,7 @@ import {
 import { Processor, Event } from "./processor";
 
 export interface GetOutput<T> {
-  record: Record;
+  record: BaseRecord;
   item: T;
 }
 
@@ -26,8 +26,8 @@ export interface ChangeOutput<TState, TOutputEvent> {
 
 // DB is the database access required by Facet<T>. Use EventDB.
 export interface DB {
-  getState(id: string): Promise<Record>;
-  getRecords(id: string): Promise<Array<Record>>;
+  getState(id: string): Promise<BaseRecord>;
+  getRecords(id: string): Promise<Array<BaseRecord>>;
   putState(
     state: StateRecord,
     previousSeq: number,
@@ -172,7 +172,7 @@ export class Facet<TState, TInputEvents, TOutputEvents> {
 }
 
 // sortRecords sorts event records by their sequence number ascending.
-const sortRecords = (eventRecords: Array<Record>): Array<Record> =>
+const sortRecords = (eventRecords: Array<BaseRecord>): Array<BaseRecord> =>
   eventRecords.sort((a, b) => {
     if (a._seq < b._seq) {
       return -1;

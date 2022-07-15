@@ -1,7 +1,7 @@
 import { Facet, DB, GetOutput, ChangeOutput } from ".";
 import { RecordTypeName, StateUpdater, StateUpdaterInput, Processor, Event } from "./processor";
 import {
-  Record,
+  BaseRecord,
   StateRecord,
   InboundRecord,
   OutboundRecord,
@@ -10,8 +10,8 @@ import {
   newOutboundRecord,
 } from "./db";
 
-type GetState = (id: string) => Promise<Record>;
-type GetRecords = (id: string) => Promise<Array<Record>>;
+type GetState = (id: string) => Promise<BaseRecord>;
+type GetRecords = (id: string) => Promise<Array<BaseRecord>>;
 type PutHead = (
   item: StateRecord,
   previousSeq: number,
@@ -61,7 +61,7 @@ describe("facet", () => {
     });
     it("returns the _itm when the db returns a record", async () => {
       const expectedState: TestItem = { a: "a", b: "b" };
-      const expectedRecord = { _itm: JSON.stringify(expectedState) } as Record;
+      const expectedRecord = { _itm: JSON.stringify(expectedState) } as BaseRecord;
 
       const expected: GetOutput<TestItem> = {
         record: expectedRecord,
@@ -128,7 +128,7 @@ describe("facet", () => {
       const initial: TestItem = { a: "0", b: "empty" };
       const db = new MockDB();
       // Don't return any records.
-      db.getRecords = async (_id: string): Promise<Array<Record>> => [];
+      db.getRecords = async (_id: string): Promise<Array<BaseRecord>> => [];
 
       // Create empty rules.
       const publishEvent = new Map<
@@ -154,7 +154,7 @@ describe("facet", () => {
       const db = new MockDB();
       const expectedState: TestItem = { a: "expected", b: "value" };
       // Return a state record.
-      db.getState = async (id: string): Promise<Record> =>
+      db.getState = async (id: string): Promise<BaseRecord> =>
         newStateRecord("name", id, 1, expectedState, new Date());
 
       // Create empty rules.
@@ -269,8 +269,8 @@ describe("facet", () => {
       const e1: TestEvent = { data1: "1", data2: "" };
       const e2: TestEvent = { data1: "2", data2: "" };
       const e3: TestEvent = { data1: "3", data2: "" };
-      db.getRecords = async (_id: string): Promise<Array<Record>> =>
-        new Array<Record>(
+      db.getRecords = async (_id: string): Promise<Array<BaseRecord>> =>
+        new Array<BaseRecord>(
           newStateRecord<TestItem>("TestItem", "id", 3, currentHead, now),
           newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", e1, now),
           newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", e2, now),
@@ -310,8 +310,8 @@ describe("facet", () => {
       const e1: TestEvent = { data1: "1", data2: "" };
       const e2: TestEvent = { data1: "2", data2: "" };
       const e3: TestEvent = { data1: "3", data2: "" };
-      db.getRecords = async (_id: string): Promise<Array<Record>> =>
-        new Array<Record>(
+      db.getRecords = async (_id: string): Promise<Array<BaseRecord>> =>
+        new Array<BaseRecord>(
           newStateRecord<TestItem>("TestItem", "id", 3, currentHead, now),
           newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", e1, now),
           newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", e2, now),
@@ -319,7 +319,7 @@ describe("facet", () => {
             _id: "unknown id",
             _seq: 4,
             _rng: "unknown range",
-          } as Record,
+          } as BaseRecord,
         );
 
       const expected: TestItem = { a: "0_1_2_3", b: "empty" };
@@ -360,8 +360,8 @@ describe("facet", () => {
       // This means that they get ignored.
       const event1 = { eventName: "event1" };
       const event2 = { eventName: "event2" };
-      db.getRecords = async (_id: string): Promise<Array<Record>> =>
-        new Array<Record>(
+      db.getRecords = async (_id: string): Promise<Array<BaseRecord>> =>
+        new Array<BaseRecord>(
           newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", e1, now),
           newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", e2, now),
           newOutboundRecord("TestItem", "id", 3, 0, "OldEvent", event1, now),
@@ -412,8 +412,8 @@ describe("facet", () => {
       const data4: TestEvent = { data1: "4", data2: "" };
 
       // Return data incorrectly sorted.
-      db.getRecords = async (_id: string): Promise<Array<Record>> =>
-        new Array<Record>(
+      db.getRecords = async (_id: string): Promise<Array<BaseRecord>> =>
+        new Array<BaseRecord>(
           newInboundRecord<TestEvent>("TestItem", "id", 2, "TestEvent", data2, now),
           newInboundRecord<TestEvent>("TestItem", "id", 1, "TestEvent", data1, now),
           newInboundRecord<TestEvent>("TestItem", "id", 3, "TestEvent", data3, now),
